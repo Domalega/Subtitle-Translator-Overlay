@@ -36,6 +36,32 @@
         <span id="dictionaryPageInfo">Page 1 / 1</span>
         <button id="dictionaryNext">Next</button>
       </footer>
+
+      <div id="contextModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Word Context</h2>
+            <button id="closeContextModal" class="windowButton">Close</button>
+          </div>
+          <div id="contextContent" class="modalBody"></div>
+        </div>
+      </div>
+
+      <div id="deleteConfirmModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Confirm Deletion</h2>
+            <button id="closeDeleteConfirmModal" class="windowButton">Cancel</button>
+          </div>
+          <div class="modalBody">
+            <p>Are you sure you want to delete the word "<span id="wordToDelete"></span>"?</p>
+            <div class="modalFooter">
+              <button id="cancelDelete" class="windowButton">Cancel</button>
+              <button id="confirmDelete" class="windowButton deleteButton">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
     <script src="dictionary.js"></script>
   </body>

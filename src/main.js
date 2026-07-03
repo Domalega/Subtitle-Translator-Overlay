@@ -194,17 +194,30 @@ function createWindow() {
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    globalShortcut.unregisterAll();
+    if (ocrWorkerPromise) {
+      ocrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
+    }
+    app.quit();
+  });
+
   globalShortcut.register('CommandOrControl+Shift+O', () => {
     restoreMainWindow();
   });
 
   globalShortcut.register('CommandOrControl+Shift+H', () => {
-    mainWindow.webContents.send('toggle-controls');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('toggle-controls');
+    }
   });
 
   globalShortcut.register('CommandOrControl+Shift+S', () => {
-    mainWindow.webContents.send('stop-ocr');
-    restoreMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('stop-ocr');
+      restoreMainWindow();
+    }
   });
 }
 
@@ -263,7 +276,7 @@ app.on('window-all-closed', () => {
   if (ocrWorkerPromise) {
     ocrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
   }
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
 
 ipcMain.handle('open-srt', async () => {
@@ -390,6 +403,70 @@ ipcMain.handle('dictionary-add', async (_event, entry) => {
   await writeDictionary(entries);
   dictionaryWindow?.webContents.send('dictionary-changed');
   return { added: true, entry: nextEntry };
+});
+
+ipcMain.handle('dictionary-delete', async (_event, id) => {
+  let entries = await readDictionary();
+  entries = entries.filter(entry => entry.id !== id);
+  await writeDictionary(entries);
+  dictionaryWindow?.webContents.send('dictionary-changed');
+  return { success: true };
+});
+
+ipcMain.handle('get-context-sentences', async (_event, word) => {
+  const normalizedWord = word.toLowerCase().replace(/[^a-z'-]/g, '').trim();
+  if (!normalizedWord) return [];
+
+  const sentences = [];
+
+  try {
+    const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`);
+    const addedExamples = new Set();
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && Array.isArray(data)) {
+        for (const entry of data) {
+          if (entry.meanings && Array.isArray(entry.meanings)) {
+            for (const meaning of entry.meanings) {
+              if (meaning.definitions && Array.isArray(meaning.definitions)) {
+                for (const definition of meaning.definitions) {
+                  if (definition.example && sentences.length < 5) {
+                    const example = definition.example.trim();
+                    if (example.length > 10 && !addedExamples.has(example)) {
+                      const translated = await translateText(example, 'en', 'ru');
+                      sentences.push({ english: example, russian: translated });
+                      addedExamples.add(example);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching context sentences:', error);
+  }
+
+  if (sentences.length > 0) return sentences;
+
+  const templates = [
+    `I learned a new ${normalizedWord} today.`,
+    `Can you explain what "${normalizedWord}" means?`,
+    `The ${normalizedWord} is very interesting.`,
+    `She used the ${normalizedWord} correctly.`,
+    `I need to understand the ${normalizedWord} better.`
+  ];
+
+  const fallbackSentences = [];
+  for (const template of templates) {
+    const translated = await translateText(template, 'en', 'ru');
+    fallbackSentences.push({ english: template, russian: translated });
+  }
+
+  return fallbackSentences;
 });
 
 ipcMain.handle('read-screen-subtitle', async () => {

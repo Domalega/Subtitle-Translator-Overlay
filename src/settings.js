@@ -6,24 +6,20 @@ const windowWidthInput = document.getElementById('windowWidth');
 const windowHeightInput = document.getElementById('windowHeight');
 const statusElement = document.getElementById('status');
 
-function applyToolTheme(theme) {
-  document.body.dataset.theme = theme;
-  localStorage.setItem('subtitle-overlay-theme', theme);
-}
-
-applyToolTheme(localStorage.getItem('subtitle-overlay-theme') || 'green');
+document.body.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
 themeSelect.value = localStorage.getItem('subtitle-overlay-theme') || 'green';
+
+window.overlayApi.onApplyUiSetting(({ key, value }) => {
+  if (key === 'theme') {
+    document.body.dataset.theme = value;
+    localStorage.setItem('subtitle-overlay-theme', value);
+  }
+});
 
 closeWindowButton.addEventListener('click', () => window.overlayApi.closeCurrentWindow());
 
 selectOcrAreaButton.addEventListener('click', () => {
-  statusElement.textContent = 'Drag a rectangle around the subtitles.';
   window.overlayApi.selectOcrArea();
-});
-
-themeSelect.addEventListener('change', () => {
-  applyToolTheme(themeSelect.value);
-  window.overlayApi.setUiSetting('theme', themeSelect.value);
 });
 
 fontScaleInput.addEventListener('input', () => {
@@ -37,4 +33,6 @@ function applyWindowSize() {
 windowWidthInput.addEventListener('input', applyWindowSize);
 windowHeightInput.addEventListener('input', applyWindowSize);
 
-// No status message for OCR area selection
+themeSelect.addEventListener('change', () => {
+  window.overlayApi.setUiSetting('theme', themeSelect.value);
+});

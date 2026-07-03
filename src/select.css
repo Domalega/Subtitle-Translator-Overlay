@@ -1,0 +1,31 @@
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  cursor: crosshair;
+  background: rgba(0, 0, 0, 0.18);
+  font-family: Segoe UI, Arial, sans-serif;
+}
+
+.hint {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.82);
+  color: white;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+#selection {
+  position: fixed;
+  display: none;
+  border: 2px solid #22c55e;
+  background: rgba(34, 197, 94, 0.18);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.34);
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings</title>
+    <link rel="stylesheet" href="tool-window.css" />
+  </head>
+  <body>
+    <main class="toolWindow">
+      <header>
+        <h1>Settings</h1>
+        <p>Overlay appearance and OCR capture area.</p>
+      </header>
+
+      <section class="card">
+        <button id="selectOcrArea" class="primary">Select OCR area</button>
+        <p class="hint">Choose only the original subtitle area at the bottom of the video.</p>
+      </section>
+
+      <section class="card formGrid">
+        <label>
+          Theme
+          <select id="themeSelect">
+            <option value="green">Green</option>
+            <option value="blue">Blue</option>
+            <option value="purple">Purple</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+
+        <label>
+          Text size
+          <input id="fontScale" type="range" min="70" max="150" value="100" />
+        </label>
+
+        <label>
+          Window width
+          <input id="windowWidth" type="range" min="620" max="1500" value="980" />
+        </label>
+
+        <label>
+          Window height
+          <input id="windowHeight" type="range" min="260" max="760" value="360" />
+        </label>
+      </section>
+
+      <div id="status" class="status"></div>
+    </main>
+    <script src="settings.js"></script>
+  </body>
+</html>

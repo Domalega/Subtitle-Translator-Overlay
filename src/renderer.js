@@ -1,13 +1,9 @@
 const playPauseButton = document.getElementById('playPause');
 const ocrOnceButton = document.getElementById('ocrOnce');
-const selectOcrAreaButton = document.getElementById('selectOcrArea');
+const addWordButton = document.getElementById('addWord');
+const dictionaryOpenButton = document.getElementById('dictionaryOpen');
 const hideControlsButton = document.getElementById('hideControls');
 const settingsToggleButton = document.getElementById('settingsToggle');
-const settingsPanel = document.getElementById('settingsPanel');
-const fontScaleInput = document.getElementById('fontScale');
-const windowWidthInput = document.getElementById('windowWidth');
-const windowHeightInput = document.getElementById('windowHeight');
-const themeSelect = document.getElementById('themeSelect');
 const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
 const russianTextElement = document.getElementById('russianText');
@@ -70,6 +66,53 @@ async function translate(text) {
   const translated = await window.overlayApi.translate(text);
   localStorage.setItem(cacheKey, translated);
   return translated;
+}
+
+function cleanSelectedWord(text) {
+  return text
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/^[\s.,!?;:"'()[\]{}]+|[\s.,!?;:"'()[\]{}]+$/g, '')
+    .trim();
+}
+
+function isRussianText(text) {
+  return /[А-Яа-яЁё]/.test(text);
+}
+
+async function addSelectedWord() {
+  const selectedText = cleanSelectedWord(window.getSelection().toString());
+  if (!selectedText) {
+    statusElement.textContent = 'Select a word in English or Russian subtitles first';
+    return;
+  }
+
+  statusElement.textContent = 'Adding word...';
+
+  try {
+    const selectedIsRussian = isRussianText(selectedText);
+    const english = selectedIsRussian
+      ? cleanSelectedWord(await window.overlayApi.translateText(selectedText, 'ru', 'en'))
+      : selectedText;
+    const russian = selectedIsRussian
+      ? selectedText
+      : cleanSelectedWord(await window.overlayApi.translateText(selectedText, 'en', 'ru'));
+    const transcription = await window.overlayApi.getPhonetic(english);
+    const result = await window.overlayApi.dictionaryAdd({
+      sourceText: selectedText,
+      english,
+      russian,
+      transcription
+    });
+
+    if (result.duplicate) {
+      statusElement.textContent = 'This word is already in dictionary';
+      return;
+    }
+
+    statusElement.textContent = `Added: ${english} - ${russian}`;
+  } catch (error) {
+    statusElement.textContent = `Could not add word: ${error.message}`;
+  }
 }
 
 async function showCue(index) {
@@ -187,29 +230,18 @@ playPauseButton.addEventListener('click', () => {
   setOcrRunning(!isOcrRunning);
 });
 ocrOnceButton.addEventListener('click', () => readOcrSubtitle({ scheduleNext: false }));
-selectOcrAreaButton.addEventListener('click', () => {
-  statusElement.textContent = 'Drag a rectangle around the original subtitles';
-  window.overlayApi.selectOcrArea();
-});
+addWordButton.addEventListener('click', addSelectedWord);
+dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDictionaryWindow());
+settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
 
-settingsToggleButton.addEventListener('click', () => {
-  settingsPanel.hidden = !settingsPanel.hidden;
-  settingsToggleButton.textContent = settingsPanel.hidden ? 'Settings' : 'Close settings';
-});
+window.overlayApi.onApplyUiSetting(({ key, value }) => {
+  if (key === 'fontScale') {
+    document.documentElement.style.setProperty('--font-scale', `${Number(value) / 100}`);
+  }
 
-fontScaleInput.addEventListener('input', () => {
-  document.documentElement.style.setProperty('--font-scale', `${Number(fontScaleInput.value) / 100}`);
-});
-
-function applyWindowSize() {
-  window.overlayApi.setWindowSize(Number(windowWidthInput.value), Number(windowHeightInput.value));
-}
-
-windowWidthInput.addEventListener('input', applyWindowSize);
-windowHeightInput.addEventListener('input', applyWindowSize);
-
-themeSelect.addEventListener('change', () => {
-  panel.dataset.theme = themeSelect.value;
+  if (key === 'theme') {
+    panel.dataset.theme = value;
+  }
 });
 
 hideControlsButton.addEventListener('click', () => {
@@ -224,8 +256,6 @@ window.overlayApi.onToggleControls(() => {
 
 window.overlayApi.onWindowRestored(() => {
   panel.classList.remove('controlsHidden');
-  settingsPanel.hidden = false;
-  settingsToggleButton.textContent = 'Close settings';
   statusElement.textContent = 'Window restored. Controls are clickable.';
 });
 

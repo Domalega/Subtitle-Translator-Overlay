@@ -13,33 +13,10 @@
         <div class="toolbar">
           <button id="playPause" class="primary">Start</button>
           <button id="ocrOnce">Read once</button>
+          <button id="addWord">Add word</button>
+          <button id="dictionaryOpen">Dictionary</button>
           <button id="settingsToggle">Settings</button>
           <button id="hideControls">Compact view</button>
-        </div>
-
-        <div id="settingsPanel" class="settingsPanel" hidden>
-          <button id="selectOcrArea">Select OCR area</button>
-          <label class="settingControl">
-            Text
-            <input id="fontScale" type="range" min="70" max="150" value="100" />
-          </label>
-          <label class="settingControl">
-            Width
-            <input id="windowWidth" type="range" min="520" max="1500" value="980" />
-          </label>
-          <label class="settingControl">
-            Height
-            <input id="windowHeight" type="range" min="220" max="760" value="360" />
-          </label>
-          <label class="settingControl">
-            Theme
-            <select id="themeSelect">
-              <option value="green">Green</option>
-              <option value="blue">Blue</option>
-              <option value="purple">Purple</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
         </div>
 
         <div class="status" id="status"></div>

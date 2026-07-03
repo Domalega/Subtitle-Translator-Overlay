@@ -2,6 +2,7 @@
   "name": "subtitle-translation-overlay",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "productName": "Subtitle Translator Overlay",
   "description": "Always-on-top overlay that shows Russian translations for English SRT subtitles.",
   "main": "src/main.js",

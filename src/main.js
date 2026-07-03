@@ -9,8 +9,27 @@ const singleInstanceLock = app.requestSingleInstanceLock();
 
 let mainWindow;
 let selectionWindow;
+let settingsWindow;
+let dictionaryWindow;
 let ocrWorkerPromise;
 let ocrArea = null;
+
+function dictionaryFilePath() {
+  return path.join(app.getPath('userData'), 'dictionary.json');
+}
+
+async function readDictionary() {
+  try {
+    return JSON.parse(await fs.readFile(dictionaryFilePath(), 'utf8'));
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function writeDictionary(entries) {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(dictionaryFilePath(), JSON.stringify(entries, null, 2), 'utf8');
+}
 
 async function getOcrWorker() {
   if (!ocrWorkerPromise) {
@@ -116,12 +135,49 @@ function createSelectionWindow() {
   });
 }
 
+function createToolWindow(fileName, title, width, height) {
+  const existingWindow = fileName === 'settings.html' ? settingsWindow : dictionaryWindow;
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    existingWindow.show();
+    existingWindow.focus();
+    return existingWindow;
+  }
+
+  const toolWindow = new BrowserWindow({
+    width,
+    height,
+    minWidth: 360,
+    minHeight: 260,
+    frame: true,
+    alwaysOnTop: true,
+    resizable: true,
+    title,
+    parent: mainWindow,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  toolWindow.setAlwaysOnTop(true, 'screen-saver');
+  toolWindow.loadFile(path.join(__dirname, fileName));
+  toolWindow.on('closed', () => {
+    if (fileName === 'settings.html') settingsWindow = null;
+    if (fileName === 'dictionary.html') dictionaryWindow = null;
+  });
+
+  if (fileName === 'settings.html') settingsWindow = toolWindow;
+  if (fileName === 'dictionary.html') dictionaryWindow = toolWindow;
+  return toolWindow;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 980,
     height: 360,
-    minWidth: 520,
-    minHeight: 220,
+    minWidth: 620,
+    minHeight: 260,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -160,6 +216,36 @@ function restoreMainWindow() {
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.focus();
   mainWindow.webContents.send('window-restored');
+}
+
+async function translateText(text, sourceLanguage, targetLanguage) {
+  const query = new URLSearchParams({
+    client: 'gtx',
+    sl: sourceLanguage,
+    tl: targetLanguage,
+    dt: 't',
+    q: text
+  });
+
+  const response = await fetch(`https://translate.googleapis.com/translate_a/single?${query}`);
+  if (!response.ok) {
+    throw new Error(`Translate request failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data?.[0]?.map((part) => part?.[0]).join('') || '';
+}
+
+async function getEnglishPhonetic(word) {
+  const normalizedWord = word.toLowerCase().replace(/[^a-z'-]/g, '').trim();
+  if (!normalizedWord) return '';
+
+  const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`);
+  if (!response.ok) return '';
+
+  const data = await response.json();
+  const phonetics = data?.[0]?.phonetics || [];
+  return phonetics.find((item) => item.text)?.text || data?.[0]?.phonetic || '';
 }
 
 if (!singleInstanceLock) {
@@ -219,9 +305,22 @@ ipcMain.handle('resize-window', (_event, dw, dh) => {
 ipcMain.handle('set-window-size', (_event, width, height) => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   mainWindow.setSize(
-    Math.max(420, Number(width || 0)),
-    Math.max(180, Number(height || 0))
+    Math.max(620, Number(width || 0)),
+    Math.max(260, Number(height || 0))
   );
+  return true;
+});
+
+ipcMain.handle('open-settings-window', () => {
+  createToolWindow('settings.html', 'Subtitle Overlay Settings', 520, 360);
+});
+
+ipcMain.handle('open-dictionary-window', () => {
+  createToolWindow('dictionary.html', 'Subtitle Dictionary', 620, 520);
+});
+
+ipcMain.handle('set-ui-setting', (_event, key, value) => {
+  mainWindow?.webContents.send('apply-ui-setting', { key, value });
   return true;
 });
 
@@ -241,6 +340,7 @@ ipcMain.handle('complete-ocr-area', (_event, area) => {
 
   selectionWindow?.close();
   mainWindow?.webContents.send('ocr-area-changed', ocrArea);
+  settingsWindow?.webContents.send('ocr-area-changed', ocrArea);
   return ocrArea;
 });
 
@@ -249,21 +349,39 @@ ipcMain.handle('cancel-ocr-area', () => {
 });
 
 ipcMain.handle('translate', async (_event, text) => {
-  const query = new URLSearchParams({
-    client: 'gtx',
-    sl: 'en',
-    tl: 'ru',
-    dt: 't',
-    q: text
-  });
+  return translateText(text, 'en', 'ru');
+});
 
-  const response = await fetch(`https://translate.googleapis.com/translate_a/single?${query}`);
-  if (!response.ok) {
-    throw new Error(`Translate request failed: ${response.status}`);
-  }
+ipcMain.handle('translate-text', async (_event, text, sourceLanguage, targetLanguage) => {
+  return translateText(text, sourceLanguage, targetLanguage);
+});
 
-  const data = await response.json();
-  return data?.[0]?.map((part) => part?.[0]).join('') || '';
+ipcMain.handle('get-phonetic', async (_event, word) => {
+  return getEnglishPhonetic(word);
+});
+
+ipcMain.handle('dictionary-get', async () => {
+  return readDictionary();
+});
+
+ipcMain.handle('dictionary-add', async (_event, entry) => {
+  const entries = await readDictionary();
+  const duplicate = entries.some((item) => (
+    (item.english || '').toLowerCase() === (entry.english || '').toLowerCase()
+    || (item.russian || '').toLowerCase() === (entry.russian || '').toLowerCase()
+  ));
+
+  if (duplicate) return { added: false, duplicate: true };
+
+  const nextEntry = {
+    ...entry,
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    addedAt: Date.now()
+  };
+  entries.push(nextEntry);
+  await writeDictionary(entries);
+  dictionaryWindow?.webContents.send('dictionary-changed');
+  return { added: true, entry: nextEntry };
 });
 
 ipcMain.handle('read-screen-subtitle', async () => {

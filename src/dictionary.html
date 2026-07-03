@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dictionary</title>
+    <link rel="stylesheet" href="tool-window.css" />
+  </head>
+  <body>
+    <main class="toolWindow">
+      <header class="splitHeader">
+        <div>
+          <h1>Dictionary</h1>
+          <p>Words added from subtitles.</p>
+        </div>
+        <label>
+          Sort
+          <select id="dictionarySort">
+            <option value="date-desc">Newest</option>
+            <option value="date-asc">Oldest</option>
+            <option value="alpha-asc">A-Z</option>
+            <option value="alpha-desc">Z-A</option>
+          </select>
+        </label>
+      </header>
+
+      <section id="dictionaryList" class="dictionaryList"></section>
+
+      <footer class="pager">
+        <button id="dictionaryPrev">Prev</button>
+        <span id="dictionaryPageInfo">Page 1 / 1</span>
+        <button id="dictionaryNext">Next</button>
+      </footer>
+    </main>
+    <script src="dictionary.js"></script>
+  </body>
+</html>

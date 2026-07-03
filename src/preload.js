@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('overlayApi', {
   setWindowSize: (width, height) => ipcRenderer.invoke('set-window-size', width, height),
   openSettingsWindow: () => ipcRenderer.invoke('open-settings-window'),
   openDictionaryWindow: () => ipcRenderer.invoke('open-dictionary-window'),
+  closeCurrentWindow: () => ipcRenderer.invoke('close-current-window'),
   setUiSetting: (key, value) => ipcRenderer.invoke('set-ui-setting', key, value),
   onToggleControls: (callback) => {
     ipcRenderer.on('toggle-controls', callback);

@@ -1,3 +1,4 @@
+const closeWindowButton = document.getElementById('closeWindow');
 const dictionarySort = document.getElementById('dictionarySort');
 const dictionaryList = document.getElementById('dictionaryList');
 const dictionaryPrevButton = document.getElementById('dictionaryPrev');
@@ -6,6 +7,25 @@ const dictionaryPageInfo = document.getElementById('dictionaryPageInfo');
 
 const pageSize = 9;
 let page = 1;
+
+document.body.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
+
+window.overlayApi.onApplyUiSetting(({ key, value }) => {
+  if (key === 'theme') {
+    document.body.dataset.theme = value;
+    localStorage.setItem('subtitle-overlay-theme', value);
+  }
+});
+
+function speakWord(word) {
+  if (!('speechSynthesis' in window)) return;
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(word);
+  utterance.lang = 'en-US';
+  utterance.rate = 0.9;
+  window.speechSynthesis.speak(utterance);
+}
 
 function sortEntries(entries) {
   const sorted = [...entries];
@@ -47,7 +67,13 @@ async function renderDictionary() {
     const meta = document.createElement('small');
     meta.textContent = [entry.transcription, new Date(entry.addedAt).toLocaleDateString()].filter(Boolean).join(' · ');
 
-    item.append(english, russian, meta);
+    const listen = document.createElement('button');
+    listen.className = 'listenButton';
+    listen.type = 'button';
+    listen.textContent = 'Listen';
+    listen.addEventListener('click', () => speakWord(entry.english || entry.sourceText));
+
+    item.append(english, russian, meta, listen);
     dictionaryList.append(item);
   });
 
@@ -55,6 +81,8 @@ async function renderDictionary() {
   dictionaryPrevButton.disabled = page <= 1;
   dictionaryNextButton.disabled = page >= totalPages;
 }
+
+closeWindowButton.addEventListener('click', () => window.overlayApi.closeCurrentWindow());
 
 dictionarySort.addEventListener('change', () => {
   page = 1;

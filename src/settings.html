@@ -8,9 +8,12 @@
   </head>
   <body>
     <main class="toolWindow">
-      <header>
-        <h1>Settings</h1>
-        <p>Overlay appearance and OCR capture area.</p>
+      <header class="toolTitlebar">
+        <div>
+          <strong>Settings</strong>
+          <span>Overlay appearance and OCR area</span>
+        </div>
+        <button id="closeWindow" class="windowButton">Close</button>
       </header>
 
       <section class="card">
@@ -26,6 +29,8 @@
             <option value="blue">Blue</option>
             <option value="purple">Purple</option>
             <option value="dark">Dark</option>
+            <option value="nothing">Nothing Light</option>
+            <option value="nothing-dark">Nothing Dark</option>
           </select>
         </label>
 

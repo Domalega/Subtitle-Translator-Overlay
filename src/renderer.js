@@ -241,8 +241,11 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
   if (key === 'theme') {
     panel.dataset.theme = value;
+    localStorage.setItem('subtitle-overlay-theme', value);
   }
 });
+
+panel.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
 
 hideControlsButton.addEventListener('click', () => {
   panel.classList.toggle('controlsHidden');

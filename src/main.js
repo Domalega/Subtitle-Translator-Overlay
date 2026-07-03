@@ -148,7 +148,7 @@ function createToolWindow(fileName, title, width, height) {
     height,
     minWidth: 360,
     minHeight: 260,
-    frame: true,
+    frame: false,
     alwaysOnTop: true,
     resizable: true,
     title,
@@ -312,15 +312,23 @@ ipcMain.handle('set-window-size', (_event, width, height) => {
 });
 
 ipcMain.handle('open-settings-window', () => {
-  createToolWindow('settings.html', 'Subtitle Overlay Settings', 520, 360);
+  createToolWindow('settings.html', 'Subtitle Overlay Settings', 600, 520);
 });
 
 ipcMain.handle('open-dictionary-window', () => {
-  createToolWindow('dictionary.html', 'Subtitle Dictionary', 620, 520);
+  createToolWindow('dictionary.html', 'Subtitle Dictionary', 680, 560);
+});
+
+ipcMain.handle('close-current-window', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window && window !== mainWindow) window.close();
+  return true;
 });
 
 ipcMain.handle('set-ui-setting', (_event, key, value) => {
   mainWindow?.webContents.send('apply-ui-setting', { key, value });
+  settingsWindow?.webContents.send('apply-ui-setting', { key, value });
+  dictionaryWindow?.webContents.send('apply-ui-setting', { key, value });
   return true;
 });
 

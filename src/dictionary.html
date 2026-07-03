@@ -8,12 +8,17 @@
   </head>
   <body>
     <main class="toolWindow">
-      <header class="splitHeader">
+      <header class="toolTitlebar">
         <div>
-          <h1>Dictionary</h1>
-          <p>Words added from subtitles.</p>
+          <strong>Dictionary</strong>
+          <span>Words added from subtitles</span>
         </div>
-        <label>
+        <button id="closeWindow" class="windowButton">Close</button>
+      </header>
+
+      <section class="card slimCard splitHeader">
+        <strong>Saved words</strong>
+        <label class="sortControl">
           Sort
           <select id="dictionarySort">
             <option value="date-desc">Newest</option>
@@ -22,7 +27,7 @@
             <option value="alpha-desc">Z-A</option>
           </select>
         </label>
-      </header>
+      </section>
 
       <section id="dictionaryList" class="dictionaryList"></section>
 

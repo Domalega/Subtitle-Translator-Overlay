@@ -2,7 +2,7 @@ const playPauseButton = document.getElementById('playPause');
 const ocrOnceButton = document.getElementById('ocrOnce');
 const addWordButton = document.getElementById('addWord');
 const dictionaryOpenButton = document.getElementById('dictionaryOpen');
-const hideControlsButton = document.getElementById('hideControls');
+const focusToggleButton = document.getElementById('focusToggle');
 const settingsToggleButton = document.getElementById('settingsToggle');
 const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
@@ -247,18 +247,12 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
 panel.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
 
-hideControlsButton.addEventListener('click', () => {
-  panel.classList.toggle('controlsHidden');
-  hideControlsButton.textContent = panel.classList.contains('controlsHidden') ? 'Full view' : 'Compact view';
-});
-
-window.overlayApi.onToggleControls(() => {
-  panel.classList.toggle('controlsHidden');
-  hideControlsButton.textContent = panel.classList.contains('controlsHidden') ? 'Full view' : 'Compact view';
+focusToggleButton.addEventListener('click', () => {
+  panel.classList.toggle('focusMode');
+  focusToggleButton.textContent = panel.classList.contains('focusMode') ? 'Exit focus' : 'Focus mode';
 });
 
 window.overlayApi.onWindowRestored(() => {
-  panel.classList.remove('controlsHidden');
   statusElement.textContent = 'Window restored. Controls are clickable.';
 });
 

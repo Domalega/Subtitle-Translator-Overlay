@@ -38,18 +38,31 @@
 
         <label>
           Text size
-          <input id="fontScale" type="range" min="70" max="150" value="100" />
+          <div class="sliderRow">
+            <input id="fontScale" type="range" min="70" max="150" value="100" />
+            <span class="sliderValue" id="fontScaleValue">100%</span>
+          </div>
         </label>
 
         <label>
           Window width
-          <input id="windowWidth" type="range" min="620" max="1500" value="980" />
+          <div class="sliderRow">
+            <input id="windowWidth" type="range" min="620" max="1500" value="980" />
+            <span class="sliderValue" id="windowWidthValue">980 px</span>
+          </div>
         </label>
 
         <label>
           Window height
-          <input id="windowHeight" type="range" min="260" max="760" value="360" />
+          <div class="sliderRow">
+            <input id="windowHeight" type="range" min="260" max="760" value="360" />
+            <span class="sliderValue" id="windowHeightValue">360 px</span>
+          </div>
         </label>
+      </section>
+
+      <section class="card">
+        <button id="resetDefaults">Reset to defaults</button>
       </section>
 
       <div id="status" class="status" hidden></div>

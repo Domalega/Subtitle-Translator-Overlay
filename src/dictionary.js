@@ -1,9 +1,13 @@
 const closeWindowButton = document.getElementById('closeWindow');
 const dictionarySort = document.getElementById('dictionarySort');
+const dictionarySearch = document.getElementById('dictionarySearch');
 const dictionaryList = document.getElementById('dictionaryList');
 const dictionaryPrevButton = document.getElementById('dictionaryPrev');
 const dictionaryNextButton = document.getElementById('dictionaryNext');
 const dictionaryPageInfo = document.getElementById('dictionaryPageInfo');
+const studyButton = document.getElementById('studyButton');
+const exportButton = document.getElementById('exportButton');
+
 const contextModal = document.getElementById('contextModal');
 const closeContextModalButton = document.getElementById('closeContextModal');
 const contextContent = document.getElementById('contextContent');
@@ -14,10 +18,33 @@ const cancelDeleteButton = document.getElementById('cancelDelete');
 const confirmDeleteButton = document.getElementById('confirmDelete');
 const wordToDeleteSpan = document.getElementById('wordToDelete');
 
-const pageSize = 9;
+const studyModal = document.getElementById('studyModal');
+const closeStudyModal = document.getElementById('closeStudyModal');
+const studyWordEl = document.getElementById('studyWord');
+const studyTranslationEl = document.getElementById('studyTranslation');
+const showTranslationBtn = document.getElementById('showTranslationBtn');
+const studyEasyBtn = document.getElementById('studyEasyBtn');
+const studyHardBtn = document.getElementById('studyHardBtn');
+const studyNextBtn = document.getElementById('studyNextBtn');
+
+const exportModal = document.getElementById('exportModal');
+const closeExportModal = document.getElementById('closeExportModal');
+const exportCsvBtn = document.getElementById('exportCsvBtn');
+const exportJsonBtn = document.getElementById('exportJsonBtn');
+
+const ITEM_HEIGHT = 72;
 let page = 1;
 let wordToDeleteId = null;
 let wordToDeleteElement = null;
+let studyWords = [];
+let studyIndex = 0;
+let studyTranslationShown = false;
+let filteredEntries = [];
+
+function getPageSize() {
+  const available = dictionaryList.clientHeight;
+  return Math.max(1, Math.floor(available / ITEM_HEIGHT));
+}
 
 document.body.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
 
@@ -30,7 +57,6 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
 function speakWord(word) {
   if (!('speechSynthesis' in window)) return;
-
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(word);
   utterance.lang = 'en-US';
@@ -41,27 +67,40 @@ function speakWord(word) {
 function sortEntries(entries) {
   const sorted = [...entries];
   const mode = dictionarySort.value;
-
   if (mode === 'date-asc') sorted.sort((a, b) => a.addedAt - b.addedAt);
-  else if (mode === 'alpha-asc') sorted.sort((a, b) => (a.english || a.sourceText).localeCompare(b.english || b.sourceText));
-  else if (mode === 'alpha-desc') sorted.sort((a, b) => (b.english || b.sourceText).localeCompare(a.english || a.sourceText));
+  else if (mode === 'alpha-asc') sorted.sort((a, b) => (a.english || a.sourceText || '').localeCompare(b.english || b.sourceText || ''));
+  else if (mode === 'alpha-desc') sorted.sort((a, b) => (b.english || b.sourceText || '').localeCompare(a.english || a.sourceText || ''));
   else sorted.sort((a, b) => b.addedAt - a.addedAt);
-
   return sorted;
 }
 
+function filterEntries(entries, query) {
+  if (!query) return entries;
+  const q = query.toLowerCase();
+  return entries.filter(e =>
+    (e.english || '').toLowerCase().includes(q) ||
+    (e.russian || '').toLowerCase().includes(q) ||
+    (e.sourceText || '').toLowerCase().includes(q) ||
+    new Date(e.addedAt).toLocaleDateString().includes(q)
+  );
+}
+
 async function renderDictionary() {
-  const entries = sortEntries(await window.overlayApi.dictionaryGet());
-  const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+  const allEntries = sortEntries(await window.overlayApi.dictionaryGet());
+  const query = dictionarySearch.value.trim();
+  filteredEntries = filterEntries(allEntries, query);
+
+  const pageSize = getPageSize();
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
   page = Math.min(page, totalPages);
-  const pageEntries = entries.slice((page - 1) * pageSize, page * pageSize);
+  const pageEntries = filteredEntries.slice((page - 1) * pageSize, page * pageSize);
 
   dictionaryList.textContent = '';
 
-  if (pageEntries.length === 0) {
+  if (filteredEntries.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'emptyState';
-    empty.textContent = 'No words yet. Select a word in the overlay and press Add word.';
+    empty.textContent = query ? 'No matching words found.' : 'No words yet. Select a word in the overlay and press Add word.';
     dictionaryList.append(empty);
   }
 
@@ -99,7 +138,6 @@ async function renderDictionary() {
       contextModal.classList.add('show');
 
       const result = await window.overlayApi.getContextSentences(word);
-
       contextContent.textContent = '';
       if (result.length === 0) {
         contextContent.textContent = 'No context sentences found for this word.';
@@ -107,15 +145,12 @@ async function renderDictionary() {
         result.forEach(s => {
           const contextEntry = document.createElement('div');
           contextEntry.className = 'contextEntry';
-
           const englishSentence = document.createElement('div');
           englishSentence.className = 'englishSentence';
           englishSentence.innerHTML = s.english.replace(new RegExp(`\b(${word})\b`, 'gi'), '<span class="highlight">$1</span>');
-
           const russianTranslation = document.createElement('div');
           russianTranslation.className = 'russianTranslation';
           russianTranslation.textContent = s.russian;
-
           contextEntry.append(englishSentence, russianTranslation);
           contextContent.append(contextEntry);
         });
@@ -125,7 +160,7 @@ async function renderDictionary() {
     const remove = document.createElement('button');
     remove.className = 'deleteButton';
     remove.type = 'button';
-    remove.textContent = '🗑';
+    remove.textContent = '\uD83D\uDDD1';
     remove.title = 'Delete word';
     remove.addEventListener('click', () => {
       wordToDeleteId = entry.id;
@@ -148,74 +183,111 @@ function hideModal(modalElement) {
   modalElement.classList.remove('show');
 }
 
+function showStudyWord() {
+  if (studyWords.length === 0) return;
+  const entry = studyWords[studyIndex];
+  studyWordEl.textContent = entry.english || entry.sourceText;
+  studyTranslationEl.textContent = '';
+  showTranslationBtn.style.display = '';
+  studyEasyBtn.style.display = 'none';
+  studyHardBtn.style.display = 'none';
+  studyNextBtn.style.display = 'none';
+  studyTranslationShown = false;
+}
+
+function nextStudyWord() {
+  if (studyWords.length === 0) return;
+  studyIndex = (studyIndex + 1) % studyWords.length;
+  showStudyWord();
+}
+
 closeWindowButton.addEventListener('click', () => window.overlayApi.closeCurrentWindow());
 
-dictionarySort.addEventListener('change', () => {
-  page = 1;
-  renderDictionary();
-});
+dictionarySort.addEventListener('change', () => { page = 1; renderDictionary(); });
+dictionarySearch.addEventListener('input', () => { page = 1; renderDictionary(); });
 
-dictionaryPrevButton.addEventListener('click', () => {
-  page -= 1;
-  renderDictionary();
-});
+dictionaryPrevButton.addEventListener('click', () => { page -= 1; renderDictionary(); });
+dictionaryNextButton.addEventListener('click', () => { page += 1; renderDictionary(); });
 
-dictionaryNextButton.addEventListener('click', () => {
-  page += 1;
-  renderDictionary();
-});
+closeContextModalButton.addEventListener('click', () => hideModal(contextModal));
+contextModal.addEventListener('click', (e) => { if (e.target === contextModal) hideModal(contextModal); });
 
-closeContextModalButton.addEventListener('click', () => {
-  hideModal(contextModal);
-});
-
-contextModal.addEventListener('click', (event) => {
-  if (event.target === contextModal) {
-    hideModal(contextModal);
-  }
-});
-
-closeDeleteConfirmModalButton.addEventListener('click', () => {
-  hideModal(deleteConfirmModal);
-});
-
-cancelDeleteButton.addEventListener('click', () => {
-  hideModal(deleteConfirmModal);
-});
+closeDeleteConfirmModalButton.addEventListener('click', () => hideModal(deleteConfirmModal));
+cancelDeleteButton.addEventListener('click', () => hideModal(deleteConfirmModal));
 
 confirmDeleteButton.addEventListener('click', async () => {
   if (wordToDeleteId && wordToDeleteElement) {
-    // Animate removal
     wordToDeleteElement.style.opacity = '0';
+    wordToDeleteElement.style.transform = 'translateX(20px)';
     wordToDeleteElement.style.height = '0';
     wordToDeleteElement.style.overflow = 'hidden';
-    wordToDeleteElement.style.transition = 'opacity 0.3s ease-out, height 0.3s ease-out';
-
     setTimeout(async () => {
       await window.overlayApi.dictionaryDelete(wordToDeleteId);
       wordToDeleteId = null;
       wordToDeleteElement = null;
       hideModal(deleteConfirmModal);
-      renderDictionary(); // Re-render to update the list and pagination
-    }, 300); // Match CSS transition duration
+    }, 220);
   }
 });
 
-deleteConfirmModal.addEventListener('click', (event) => {
-  if (event.target === deleteConfirmModal) {
-    hideModal(deleteConfirmModal);
-  }
+deleteConfirmModal.addEventListener('click', (e) => { if (e.target === deleteConfirmModal) hideModal(deleteConfirmModal); });
+
+studyButton.addEventListener('click', async () => {
+  const allEntries = await window.overlayApi.dictionaryGet();
+  studyWords = sortEntries(allEntries);
+  if (studyWords.length === 0) return;
+  studyIndex = 0;
+  studyModal.classList.add('show');
+  showStudyWord();
+});
+
+showTranslationBtn.addEventListener('click', () => {
+  const entry = studyWords[studyIndex];
+  studyTranslationEl.textContent = entry.russian || '';
+  showTranslationBtn.style.display = 'none';
+  studyEasyBtn.style.display = '';
+  studyHardBtn.style.display = '';
+  studyNextBtn.style.display = '';
+  studyTranslationShown = true;
+});
+
+studyEasyBtn.addEventListener('click', nextStudyWord);
+studyHardBtn.addEventListener('click', nextStudyWord);
+studyNextBtn.addEventListener('click', nextStudyWord);
+closeStudyModal.addEventListener('click', () => hideModal(studyModal));
+studyModal.addEventListener('click', (e) => { if (e.target === studyModal) hideModal(studyModal); });
+
+exportButton.addEventListener('click', () => exportModal.classList.add('show'));
+closeExportModal.addEventListener('click', () => hideModal(exportModal));
+exportModal.addEventListener('click', (e) => { if (e.target === exportModal) hideModal(exportModal); });
+
+exportCsvBtn.addEventListener('click', async () => {
+  const entries = await window.overlayApi.dictionaryGet();
+  await window.overlayApi.exportDictionary(entries, 'csv');
+  hideModal(exportModal);
+});
+
+exportJsonBtn.addEventListener('click', async () => {
+  const entries = await window.overlayApi.dictionaryGet();
+  await window.overlayApi.exportDictionary(entries, 'json');
+  hideModal(exportModal);
 });
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
-    if (contextModal.classList.contains('show')) {
-      hideModal(contextModal);
-    } else if (deleteConfirmModal.classList.contains('show')) {
-      hideModal(deleteConfirmModal);
-    }
+    if (contextModal.classList.contains('show')) hideModal(contextModal);
+    else if (deleteConfirmModal.classList.contains('show')) hideModal(deleteConfirmModal);
+    else if (studyModal.classList.contains('show')) hideModal(studyModal);
+    else if (exportModal.classList.contains('show')) hideModal(exportModal);
   }
 });
 
 window.overlayApi.onDictionaryChanged(renderDictionary);
+
+let resizeDebounce;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeDebounce);
+  resizeDebounce = setTimeout(() => renderDictionary(), 150);
+});
+
 renderDictionary();

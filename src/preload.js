@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('overlayApi', {
   dictionaryAdd: (entry) => ipcRenderer.invoke('dictionary-add', entry),
   dictionaryDelete: (id) => ipcRenderer.invoke('dictionary-delete', id),
   getContextSentences: (word) => ipcRenderer.invoke('get-context-sentences', word),
+  exportDictionary: (entries, format) => ipcRenderer.invoke('export-dictionary', entries, format),
   readScreenSubtitle: () => ipcRenderer.invoke('read-screen-subtitle'),
   selectOcrArea: () => ipcRenderer.invoke('select-ocr-area'),
   completeOcrArea: (area) => ipcRenderer.invoke('complete-ocr-area', area),

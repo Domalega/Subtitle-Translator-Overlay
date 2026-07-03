@@ -29,6 +29,12 @@
         </label>
       </section>
 
+      <section class="searchBar">
+        <input id="dictionarySearch" type="search" placeholder="Search words, translations, dates..." />
+        <button id="studyButton">Study</button>
+        <button id="exportButton">Export</button>
+      </section>
+
       <section id="dictionaryList" class="dictionaryList"></section>
 
       <footer class="pager">
@@ -58,6 +64,41 @@
             <div class="modalFooter">
               <button id="cancelDelete" class="windowButton">Cancel</button>
               <button id="confirmDelete" class="windowButton deleteButton">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="studyModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Study Mode</h2>
+            <button id="closeStudyModal" class="windowButton">Close</button>
+          </div>
+          <div class="modalBody" style="text-align:center">
+            <div class="studyWord" id="studyWord"></div>
+            <div class="studyTranslation" id="studyTranslation"></div>
+            <div class="studyControls">
+              <button id="showTranslationBtn">Show translation</button>
+              <button id="studyEasyBtn">Easy</button>
+              <button id="studyHardBtn">Hard</button>
+              <button id="studyNextBtn" class="primary">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="exportModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Export Dictionary</h2>
+            <button id="closeExportModal" class="windowButton">Close</button>
+          </div>
+          <div class="modalBody" style="text-align:center">
+            <p style="margin-bottom:16px">Choose export format:</p>
+            <div style="display:flex;gap:10px;justify-content:center">
+              <button id="exportCsvBtn" class="primary">Export CSV</button>
+              <button id="exportJsonBtn" class="primary">Export JSON</button>
             </div>
           </div>
         </div>

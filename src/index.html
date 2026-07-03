@@ -9,14 +9,16 @@
   <body>
     <main class="app">
       <section class="panel">
-        <div class="dragStrip">Subtitle Translator Overlay</div>
-        <div class="toolbar">
-          <button id="playPause" class="primary">Start</button>
-          <button id="ocrOnce">Read once</button>
-          <button id="addWord">Add word</button>
-          <button id="dictionaryOpen">Dictionary</button>
-          <button id="settingsToggle">Settings</button>
-          <button id="hideControls">Compact view</button>
+        <div class="mainHeader" style="-webkit-app-region: drag;">
+          <div class="appTitle">Subtitle Translator Overlay</div>
+          <div class="headerButtons" style="-webkit-app-region: no-drag;">
+            <button id="playPause" class="primary">Start</button>
+            <button id="ocrOnce">Read once</button>
+            <button id="addWord">Add word</button>
+            <button id="dictionaryOpen">Dictionary</button>
+            <button id="settingsToggle">Settings</button>
+            <button id="focusToggle">Focus mode</button>
+          </div>
         </div>
 
         <div class="status" id="status"></div>

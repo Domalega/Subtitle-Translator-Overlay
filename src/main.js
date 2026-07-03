@@ -325,7 +325,7 @@ ipcMain.handle('set-window-size', (_event, width, height) => {
 });
 
 ipcMain.handle('open-settings-window', () => {
-  createToolWindow('settings.html', 'Subtitle Overlay Settings', 600, 520);
+  createToolWindow('settings.html', 'Subtitle Overlay Settings', 600, 580);
 });
 
 ipcMain.handle('open-dictionary-window', () => {
@@ -467,6 +467,37 @@ ipcMain.handle('get-context-sentences', async (_event, word) => {
   }
 
   return fallbackSentences;
+});
+
+ipcMain.handle('export-dictionary', async (_event, entries, format) => {
+  const result = await dialog.showSaveDialog(dictionaryWindow || mainWindow, {
+    title: 'Export Dictionary',
+    defaultPath: `dictionary.${format}`,
+    filters: [
+      format === 'csv' ? { name: 'CSV', extensions: ['csv'] } : { name: 'JSON', extensions: ['json'] }
+    ]
+  });
+
+  if (result.canceled) return false;
+
+  const filePath = result.filePath;
+
+  if (format === 'csv') {
+    const header = 'Word,Translation,Transcription,Date\n';
+    const rows = entries.map(e =>
+      `"${(e.english || e.sourceText || '').replace(/"/g, '""')}","${(e.russian || '').replace(/"/g, '""')}","${(e.transcription || '').replace(/"/g, '""')}","${e.addedAt ? new Date(e.addedAt).toISOString().slice(0, 10) : ''}"`
+    ).join('\n');
+    await fs.writeFile(filePath, '\uFEFF' + header + rows, 'utf8');
+  } else {
+    await fs.writeFile(filePath, JSON.stringify(entries.map(e => ({
+      word: e.english || e.sourceText,
+      translation: e.russian,
+      transcription: e.transcription,
+      date: e.addedAt ? new Date(e.addedAt).toISOString().slice(0, 10) : ''
+    })), null, 2), 'utf8');
+  }
+
+  return true;
 });
 
 ipcMain.handle('read-screen-subtitle', async () => {

@@ -22,6 +22,19 @@ contextBridge.exposeInMainWorld('overlayApi', {
   openDictionaryWindow: () => ipcRenderer.invoke('open-dictionary-window'),
   closeCurrentWindow: () => ipcRenderer.invoke('close-current-window'),
   setUiSetting: (key, value) => ipcRenderer.invoke('set-ui-setting', key, value),
+  startCaptureTranslate: () => ipcRenderer.invoke('start-capture-translate'),
+  completeCaptureTranslate: (area) => ipcRenderer.invoke('complete-capture-translate', area),
+  cancelCaptureTranslate: () => ipcRenderer.invoke('cancel-capture-translate'),
+  openTranslateWindow: () => ipcRenderer.invoke('open-translate-window'),
+  translateWindowAddWord: (entry) => ipcRenderer.invoke('translate-window-add-word', entry),
+  getGameSettings: () => ipcRenderer.invoke('get-game-settings'),
+  setGameSetting: (key, value) => ipcRenderer.invoke('set-game-setting', key, value),
+  onTranslateResult: (callback) => {
+    ipcRenderer.on('translate-result', (_event, data) => callback(data));
+  },
+  onTranslateSavedWords: (callback) => {
+    ipcRenderer.on('translate-saved-words', (_event, words) => callback(words));
+  },
   onToggleControls: (callback) => {
     ipcRenderer.on('toggle-controls', callback);
   },

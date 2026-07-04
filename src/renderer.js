@@ -3,6 +3,7 @@ const ocrOnceButton = document.getElementById('ocrOnce');
 const addWordButton = document.getElementById('addWord');
 const dictionaryOpenButton = document.getElementById('dictionaryOpen');
 const focusToggleButton = document.getElementById('focusToggle');
+const gameModeToggleButton = document.getElementById('gameModeToggle');
 const settingsToggleButton = document.getElementById('settingsToggle');
 const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
@@ -250,6 +251,20 @@ panel.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
 focusToggleButton.addEventListener('click', () => {
   panel.classList.toggle('focusMode');
   focusToggleButton.textContent = panel.classList.contains('focusMode') ? 'Exit focus' : 'Focus mode';
+});
+
+let isGameMode = false;
+gameModeToggleButton.addEventListener('click', async () => {
+  isGameMode = !isGameMode;
+  gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
+  gameModeToggleButton.classList.toggle('primary', isGameMode);
+  if (isGameMode) {
+    await window.overlayApi.startGameMode();
+    statusElement.textContent = 'Game OCR: Press Ctrl+Shift+T to translate screen, Ctrl+Shift+C to clear';
+  } else {
+    await window.overlayApi.stopGameMode();
+    statusElement.textContent = 'Game OCR stopped';
+  }
 });
 
 window.overlayApi.onWindowRestored(() => {

@@ -7,6 +7,14 @@ const windowHeightInput = document.getElementById('windowHeight');
 const fontScaleValue = document.getElementById('fontScaleValue');
 const windowWidthValue = document.getElementById('windowWidthValue');
 const windowHeightValue = document.getElementById('windowHeightValue');
+const gameOcrMode = document.getElementById('gameOcrMode');
+const gameOcrInterval = document.getElementById('gameOcrInterval');
+const gameCardWidth = document.getElementById('gameCardWidth');
+const gameCardWidthValue = document.getElementById('gameCardWidthValue');
+const gameCardFontSize = document.getElementById('gameCardFontSize');
+const gameCardFontSizeValue = document.getElementById('gameCardFontSizeValue');
+const gameCardOpacity = document.getElementById('gameCardOpacity');
+const gameCardOpacityValue = document.getElementById('gameCardOpacityValue');
 const resetButton = document.getElementById('resetDefaults');
 const statusElement = document.getElementById('status');
 
@@ -44,6 +52,43 @@ windowHeightInput.addEventListener('input', () => {
 themeSelect.addEventListener('change', () => {
   window.overlayApi.setUiSetting('theme', themeSelect.value);
 });
+
+gameOcrMode.addEventListener('change', () => {
+  window.overlayApi.setGameSetting('mode', gameOcrMode.value);
+});
+
+gameOcrInterval.addEventListener('change', () => {
+  window.overlayApi.setGameSetting('liveInterval', Number(gameOcrInterval.value));
+});
+
+gameCardWidth.addEventListener('input', () => {
+  gameCardWidthValue.textContent = `${gameCardWidth.value} px`;
+  window.overlayApi.setGameSetting('cardWidth', Number(gameCardWidth.value));
+});
+
+gameCardFontSize.addEventListener('input', () => {
+  gameCardFontSizeValue.textContent = `${gameCardFontSize.value} px`;
+  window.overlayApi.setGameSetting('cardFontSize', Number(gameCardFontSize.value));
+});
+
+gameCardOpacity.addEventListener('input', () => {
+  gameCardOpacityValue.textContent = `${gameCardOpacity.value}%`;
+  window.overlayApi.setGameSetting('cardOpacity', Number(gameCardOpacity.value) / 100);
+});
+
+async function loadGameSettings() {
+  const settings = await window.overlayApi.getGameSettings();
+  gameOcrMode.value = settings.mode || 'hotkey';
+  gameOcrInterval.value = String(settings.liveInterval || 5);
+  gameCardWidth.value = settings.cardWidth || 480;
+  gameCardFontSize.value = settings.cardFontSize || 14;
+  gameCardOpacity.value = Math.round((settings.cardOpacity || 1) * 100);
+  gameCardWidthValue.textContent = `${gameCardWidth.value} px`;
+  gameCardFontSizeValue.textContent = `${gameCardFontSize.value} px`;
+  gameCardOpacityValue.textContent = `${gameCardOpacity.value}%`;
+}
+
+loadGameSettings();
 
 resetButton.addEventListener('click', () => {
   const defaults = { fontScale: 100, windowWidth: 980, windowHeight: 360, theme: 'green' };

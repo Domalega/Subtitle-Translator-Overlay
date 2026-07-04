@@ -11,8 +11,14 @@ let mainWindow;
 let selectionWindow;
 let settingsWindow;
 let dictionaryWindow;
+let captureWindow;
+let translateWindow;
 let ocrWorkerPromise;
+let gameOcrWorkerPromise;
 let ocrArea = null;
+let gameOcrBusy = false;
+const gameTranslationCache = new Map();
+const gameDictionaryCache = new Map();
 
 function dictionaryFilePath() {
   return path.join(app.getPath('userData'), 'dictionary.json');
@@ -52,6 +58,17 @@ async function getOcrWorker() {
   }
 
   return ocrWorkerPromise;
+}
+
+async function getGameOcrWorker() {
+  if (!gameOcrWorkerPromise) {
+    gameOcrWorkerPromise = createWorker('eng', 1, { logger: () => {} });
+    gameOcrWorkerPromise = gameOcrWorkerPromise.then(async (worker) => {
+      await worker.setParameters({ tessedit_pageseg_mode: '11' });
+      return worker;
+    });
+  }
+  return gameOcrWorkerPromise;
 }
 
 function cleanOcrText(text) {
@@ -172,6 +189,172 @@ function createToolWindow(fileName, title, width, height) {
   return toolWindow;
 }
 
+function createCaptureWindow() {
+  const display = screen.getPrimaryDisplay();
+  captureWindow = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  captureWindow.setAlwaysOnTop(true, 'screen-saver');
+  captureWindow.loadFile(path.join(__dirname, 'capture-select.html'));
+  captureWindow.on('closed', () => {
+    captureWindow = null;
+  });
+}
+
+function createTranslateWindow() {
+  if (translateWindow && !translateWindow.isDestroyed()) {
+    translateWindow.show();
+    translateWindow.focus();
+    return translateWindow;
+  }
+  translateWindow = new BrowserWindow({
+    width: 520,
+    height: 580,
+    minWidth: 380,
+    minHeight: 420,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: true,
+    title: 'Screen Translation',
+    parent: mainWindow,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  translateWindow.setAlwaysOnTop(true, 'screen-saver');
+  translateWindow.loadFile(path.join(__dirname, 'translate-window.html'));
+  translateWindow.on('closed', () => {
+    translateWindow = null;
+  });
+  return translateWindow;
+}
+
+async function runCaptureTranslate(area) {
+  if (gameOcrBusy) return;
+  gameOcrBusy = true;
+
+  try {
+    const display = screen.getPrimaryDisplay();
+    const scale = display.scaleFactor || 1;
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: display.size.width, height: display.size.height }
+    });
+    const source = sources[0];
+    if (!source) return;
+
+    const image = nativeImage.createFromDataURL(source.thumbnail.toDataURL());
+    const cropArea = {
+      x: Math.round(area.x * scale),
+      y: Math.round(area.y * scale),
+      width: Math.round(area.width * scale),
+      height: Math.round(area.height * scale)
+    };
+    const crop = image.crop(cropArea);
+    const pngBuffer = crop.toPNG();
+
+    const worker = await getGameOcrWorker();
+    const result = await worker.recognize(pngBuffer);
+
+    const text = cleanGameOcrText(result.data.text);
+    const words = extractGameWords(text);
+
+    await refreshDictionaryCache();
+
+    if (!text || text.length < 3) {
+      translateWindow?.webContents.send('translate-result', { original: '', translation: '', words: [] });
+      return;
+    }
+
+    const cacheKey = text.toLowerCase().trim();
+    let translation = gameTranslationCache.get(cacheKey);
+    if (!translation) {
+      translation = await translateText(text, 'en', 'ru');
+      if (translation) gameTranslationCache.set(cacheKey, translation);
+    }
+
+    const wordEntries = words.map((w) => ({
+      english: w,
+      russian: ''
+    }));
+
+    const tw = createTranslateWindow();
+    tw.webContents.on('did-finish-load', () => {
+      tw.webContents.send('translate-result', {
+        original: text,
+        translation: translation || '',
+        words: wordEntries
+      });
+      const savedWords = [...gameDictionaryCache.keys()];
+      tw.webContents.send('translate-saved-words', savedWords);
+    });
+    if (tw.webContents.isLoading() === false) {
+      tw.webContents.send('translate-result', {
+        original: text,
+        translation: translation || '',
+        words: wordEntries
+      });
+      tw.webContents.send('translate-saved-words', [...gameDictionaryCache.keys()]);
+    }
+  } catch (error) {
+    console.error('Capture translate error:', error);
+  } finally {
+    gameOcrBusy = false;
+  }
+}
+
+function cleanGameOcrText(text) {
+  return text
+    .replace(/[|_{}[\]<>~`^]/g, '')
+    .replace(/[^a-zA-Z0-9 .,!?'"\-:;()[\]\n]/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/ +/g, ' ')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length >= 3 && /[a-zA-Z]{2}/.test(l))
+    .join('\n')
+    .trim();
+}
+
+function extractGameWords(text) {
+  const seen = new Set();
+  return text
+    .split(/[\s\n,.;:!?()[\]]+/)
+    .map((w) => w.replace(/^['"]+|['"]+$/g, '').trim())
+    .filter((w) => w.length >= 3 && /^[a-zA-Z'-]+$/.test(w))
+    .filter((w) => {
+      const lower = w.toLowerCase();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    })
+    .slice(0, 30);
+}
+
+async function refreshDictionaryCache() {
+  const entries = await readDictionary();
+  gameDictionaryCache.clear();
+  entries.forEach((e) => {
+    const word = (e.english || '').toLowerCase().trim();
+    if (word) gameDictionaryCache.set(word, true);
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 980,
@@ -200,6 +383,9 @@ function createWindow() {
     if (ocrWorkerPromise) {
       ocrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
     }
+    if (gameOcrWorkerPromise) {
+      gameOcrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
+    }
     app.quit();
   });
 
@@ -218,6 +404,10 @@ function createWindow() {
       mainWindow.webContents.send('stop-ocr');
       restoreMainWindow();
     }
+  });
+
+  globalShortcut.register('CommandOrControl+Shift+T', () => {
+    if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
   });
 }
 
@@ -276,6 +466,9 @@ app.on('window-all-closed', () => {
   if (ocrWorkerPromise) {
     ocrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
   }
+  if (gameOcrWorkerPromise) {
+    gameOcrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
+  }
   app.quit();
 });
 
@@ -325,7 +518,7 @@ ipcMain.handle('set-window-size', (_event, width, height) => {
 });
 
 ipcMain.handle('open-settings-window', () => {
-  createToolWindow('settings.html', 'Subtitle Overlay Settings', 600, 580);
+  createToolWindow('settings.html', 'Subtitle Overlay Settings', 600, 680);
 });
 
 ipcMain.handle('open-dictionary-window', () => {
@@ -520,4 +713,64 @@ ipcMain.handle('read-screen-subtitle', async () => {
   const worker = await getOcrWorker();
   const result = await worker.recognize(maskedPng);
   return cleanOcrText(result.data.text);
+});
+
+ipcMain.handle('start-capture-translate', () => {
+  if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
+});
+
+ipcMain.handle('complete-capture-translate', (_event, area) => {
+  captureWindow?.close();
+  runCaptureTranslate(area);
+});
+
+ipcMain.handle('cancel-capture-translate', () => {
+  captureWindow?.close();
+});
+
+ipcMain.handle('open-translate-window', () => {
+  createTranslateWindow();
+});
+
+ipcMain.handle('translate-window-add-word', async (_event, entry) => {
+  const entries = await readDictionary();
+  const duplicate = entries.some((item) =>
+    (item.english || '').toLowerCase() === (entry.english || '').toLowerCase()
+  );
+  if (duplicate) return { added: false, duplicate: true };
+
+  const nextEntry = {
+    ...entry,
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    addedAt: Date.now()
+  };
+  entries.push(nextEntry);
+  await writeDictionary(entries);
+  gameDictionaryCache.set((entry.english || '').toLowerCase().trim(), true);
+  dictionaryWindow?.webContents.send('dictionary-changed');
+  return { added: true, entry: nextEntry };
+});
+
+ipcMain.handle('get-game-settings', () => ({}));
+
+ipcMain.handle('set-game-setting', () => true);
+
+ipcMain.handle('game-add-word', async (_event, entry) => {
+  const entries = await readDictionary();
+  const duplicate = entries.some((item) =>
+    (item.english || '').toLowerCase() === (entry.english || '').toLowerCase()
+  );
+  if (duplicate) return { added: false, duplicate: true };
+
+  const nextEntry = {
+    ...entry,
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    addedAt: Date.now()
+  };
+  entries.push(nextEntry);
+  await writeDictionary(entries);
+  gameDictionaryCache.set((entry.english || '').toLowerCase().trim(), true);
+  syncSavedWordsToOverlay();
+  dictionaryWindow?.webContents.send('dictionary-changed');
+  return { added: true, entry: nextEntry };
 });

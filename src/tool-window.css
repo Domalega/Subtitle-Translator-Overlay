@@ -110,6 +110,7 @@ button, input, select {
   flex-direction: column;
   gap: 14px;
   height: 100%;
+  overflow-y: auto;
   padding: 12px 18px 18px;
   font-size: 15px;
   background:
@@ -176,6 +177,32 @@ p { color: var(--muted); }
   border-radius: var(--radius-md);
   background: var(--card);
   backdrop-filter: blur(14px);
+}
+
+.accordionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 2px 0;
+  user-select: none;
+}
+.accordionHeader:hover strong { color: var(--accent); }
+.accordionChevron {
+  font-size: 12px;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+.accordionHeader.open .accordionChevron { transform: rotate(0); }
+
+.accordionBody {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.2s ease;
+}
+.accordionBody.open {
+  max-height: 600px;
+  margin-top: 10px;
 }
 
 .slimCard { padding: 10px 12px; }
@@ -251,6 +278,8 @@ button:disabled {
 }
 
 input[type='range'] { width: 100%; accent-color: var(--accent); }
+
+input[type='checkbox'] { accent-color: var(--accent); }
 
 input[type='text'],
 input[type='search'] {
@@ -455,3 +484,26 @@ input[type='search'] {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 10px; opacity: 0.7; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent-strong); }
+
+.translateTextBlock {
+  padding: 12px; border-radius: 10px;
+  background: var(--card); border: 1px solid var(--card-border);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 160px; overflow-y: auto; font-size: 14px;
+}
+.wordChips {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;
+}
+.wordChip {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--control-1); border: 1px solid var(--card-border);
+  font-size: 13px;
+}
+.wordChip .chipAdd {
+  padding: 1px 7px; border-radius: 999px; border: none;
+  background: rgba(34,197,94,0.35); color: #4ade80; cursor: pointer; font-size: 11px;
+}
+.wordChip .chipAdd:hover { background: #22c55e; color: #fff; }
+.wordChip .chipAdd.saved { background: transparent; color: var(--muted); cursor: default; }
+.copyButtons { display: flex; gap: 8px; margin-top: 4px; }

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, globalShortcut, desktopCapturer, nativeImage, screen } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 const { createWorker } = require('tesseract.js');
 const { PNG } = require('pngjs');
@@ -17,6 +18,7 @@ let ocrWorkerPromise;
 let gameOcrWorkerPromise;
 let ocrArea = null;
 let gameOcrBusy = false;
+let gameModeEnabled = false;
 const gameTranslationCache = new Map();
 const gameDictionaryCache = new Map();
 
@@ -277,7 +279,7 @@ async function runCaptureTranslate(area) {
     await refreshDictionaryCache();
 
     if (!text || text.length < 3) {
-      translateWindow?.webContents.send('translate-result', { original: '', translation: '', words: [] });
+      mainWindow?.webContents.send('capture-result', { original: '', translation: '', words: [] });
       return;
     }
 
@@ -293,24 +295,11 @@ async function runCaptureTranslate(area) {
       russian: ''
     }));
 
-    const tw = createTranslateWindow();
-    tw.webContents.on('did-finish-load', () => {
-      tw.webContents.send('translate-result', {
-        original: text,
-        translation: translation || '',
-        words: wordEntries
-      });
-      const savedWords = [...gameDictionaryCache.keys()];
-      tw.webContents.send('translate-saved-words', savedWords);
+    mainWindow?.webContents.send('capture-result', {
+      original: text,
+      translation: translation || '',
+      words: wordEntries
     });
-    if (tw.webContents.isLoading() === false) {
-      tw.webContents.send('translate-result', {
-        original: text,
-        translation: translation || '',
-        words: wordEntries
-      });
-      tw.webContents.send('translate-saved-words', [...gameDictionaryCache.keys()]);
-    }
   } catch (error) {
     console.error('Capture translate error:', error);
   } finally {
@@ -406,9 +395,8 @@ function createWindow() {
     }
   });
 
-  globalShortcut.register('CommandOrControl+Shift+T', () => {
-    if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
-  });
+  const uiSettings = loadUiSettings();
+  registerGameHotkey(uiSettings.hotkey || 'CommandOrControl+Shift+T');
 }
 
 function restoreMainWindow() {
@@ -518,7 +506,7 @@ ipcMain.handle('set-window-size', (_event, width, height) => {
 });
 
 ipcMain.handle('open-settings-window', () => {
-  createToolWindow('settings.html', 'Subtitle Overlay Settings', 600, 680);
+  createToolWindow('settings.html', 'Subtitle Overlay Settings', 600, 620);
 });
 
 ipcMain.handle('open-dictionary-window', () => {
@@ -531,11 +519,24 @@ ipcMain.handle('close-current-window', (event) => {
   return true;
 });
 
-ipcMain.handle('set-ui-setting', (_event, key, value) => {
+ipcMain.handle('set-ui-setting', async (_event, key, value) => {
+  const settings = loadUiSettings();
+  settings[key] = value;
+  await saveUiSettings(settings);
   mainWindow?.webContents.send('apply-ui-setting', { key, value });
   settingsWindow?.webContents.send('apply-ui-setting', { key, value });
   dictionaryWindow?.webContents.send('apply-ui-setting', { key, value });
   return true;
+});
+
+ipcMain.handle('get-ui-settings', () => loadUiSettings());
+
+ipcMain.handle('reload-ui-settings', () => {
+  const settings = loadUiSettings();
+  mainWindow?.webContents.send('apply-ui-settings', settings);
+  settingsWindow?.webContents.send('apply-ui-settings', settings);
+  dictionaryWindow?.webContents.send('apply-ui-settings', settings);
+  return settings;
 });
 
 ipcMain.handle('select-ocr-area', () => {
@@ -594,6 +595,7 @@ ipcMain.handle('dictionary-add', async (_event, entry) => {
   };
   entries.push(nextEntry);
   await writeDictionary(entries);
+  gameDictionaryCache.set((entry.english || '').toLowerCase().trim(), true);
   dictionaryWindow?.webContents.send('dictionary-changed');
   return { added: true, entry: nextEntry };
 });
@@ -610,6 +612,8 @@ ipcMain.handle('get-context-sentences', async (_event, word) => {
   const normalizedWord = word.toLowerCase().replace(/[^a-z'-]/g, '').trim();
   if (!normalizedWord) return [];
 
+  const settings = loadUiSettings();
+  const maxCount = settings.contextCount || 5;
   const sentences = [];
 
   try {
@@ -624,7 +628,7 @@ ipcMain.handle('get-context-sentences', async (_event, word) => {
             for (const meaning of entry.meanings) {
               if (meaning.definitions && Array.isArray(meaning.definitions)) {
                 for (const definition of meaning.definitions) {
-                  if (definition.example && sentences.length < 5) {
+                  if (definition.example && sentences.length < maxCount) {
                     const example = definition.example.trim();
                     if (example.length > 10 && !addedExamples.has(example)) {
                       const translated = await translateText(example, 'en', 'ru');
@@ -651,7 +655,7 @@ ipcMain.handle('get-context-sentences', async (_event, word) => {
     `The ${normalizedWord} is very interesting.`,
     `She used the ${normalizedWord} correctly.`,
     `I need to understand the ${normalizedWord} better.`
-  ];
+  ].slice(0, maxCount);
 
   const fallbackSentences = [];
   for (const template of templates) {
@@ -728,49 +732,103 @@ ipcMain.handle('cancel-capture-translate', () => {
   captureWindow?.close();
 });
 
+const defaultGameSettings = {
+  mode: 'hotkey',
+  liveInterval: 5,
+  cardWidth: 480,
+  cardFontSize: 14,
+  cardOpacity: 1
+};
+
+function gameSettingsPath() {
+  return path.join(app.getPath('userData'), 'game-settings.json');
+}
+
+function loadGameSettings() {
+  try {
+    return JSON.parse(fsSync.readFileSync(gameSettingsPath(), 'utf8'));
+  } catch (_) {
+    return { ...defaultGameSettings };
+  }
+}
+
+async function saveGameSettings(settings) {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(gameSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+}
+
+const defaultUiSettings = {
+  theme: 'green',
+  fontScale: 100,
+  windowWidth: 980,
+  windowHeight: 360,
+  font: 'system',
+  hotkey: 'CommandOrControl+Shift+T',
+  deleteConfirm: true,
+  contextCount: 5
+};
+
+function uiSettingsPath() {
+  return path.join(app.getPath('userData'), 'ui-settings.json');
+}
+
+function loadUiSettings() {
+  try {
+    return JSON.parse(fsSync.readFileSync(uiSettingsPath(), 'utf8'));
+  } catch (_) {
+    return { ...defaultUiSettings };
+  }
+}
+
+async function saveUiSettings(settings) {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(uiSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+}
+
 ipcMain.handle('open-translate-window', () => {
   createTranslateWindow();
 });
 
-ipcMain.handle('translate-window-add-word', async (_event, entry) => {
-  const entries = await readDictionary();
-  const duplicate = entries.some((item) =>
-    (item.english || '').toLowerCase() === (entry.english || '').toLowerCase()
-  );
-  if (duplicate) return { added: false, duplicate: true };
+ipcMain.handle('get-game-settings', () => loadGameSettings());
 
-  const nextEntry = {
-    ...entry,
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    addedAt: Date.now()
-  };
-  entries.push(nextEntry);
-  await writeDictionary(entries);
-  gameDictionaryCache.set((entry.english || '').toLowerCase().trim(), true);
-  dictionaryWindow?.webContents.send('dictionary-changed');
-  return { added: true, entry: nextEntry };
+ipcMain.handle('set-game-setting', async (_event, key, value) => {
+  const settings = loadGameSettings();
+  settings[key] = value;
+  await saveGameSettings(settings);
+  return true;
 });
 
-ipcMain.handle('get-game-settings', () => ({}));
+ipcMain.handle('set-game-mode-enabled', (_event, enabled) => {
+  gameModeEnabled = enabled;
+  return true;
+});
 
-ipcMain.handle('set-game-setting', () => true);
+let currentGameHotkey = 'CommandOrControl+Shift+T';
+function registerGameHotkey(accelerator) {
+  try {
+    globalShortcut.unregister(currentGameHotkey);
+  } catch (_) {}
+  currentGameHotkey = accelerator;
+  try {
+    globalShortcut.register(accelerator, () => {
+      if (!gameModeEnabled) {
+        mainWindow?.webContents.send('game-mode-disabled');
+        return;
+      }
+      if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
+    });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 
-ipcMain.handle('game-add-word', async (_event, entry) => {
-  const entries = await readDictionary();
-  const duplicate = entries.some((item) =>
-    (item.english || '').toLowerCase() === (entry.english || '').toLowerCase()
-  );
-  if (duplicate) return { added: false, duplicate: true };
-
-  const nextEntry = {
-    ...entry,
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    addedAt: Date.now()
-  };
-  entries.push(nextEntry);
-  await writeDictionary(entries);
-  gameDictionaryCache.set((entry.english || '').toLowerCase().trim(), true);
-  syncSavedWordsToOverlay();
-  dictionaryWindow?.webContents.send('dictionary-changed');
-  return { added: true, entry: nextEntry };
+ipcMain.handle('set-game-hotkey', (_event, accelerator) => {
+  const ok = registerGameHotkey(accelerator);
+  if (ok) {
+    const settings = loadUiSettings();
+    settings.hotkey = accelerator;
+    saveUiSettings(settings);
+  }
+  return ok;
 });

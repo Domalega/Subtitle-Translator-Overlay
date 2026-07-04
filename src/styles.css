@@ -273,7 +273,7 @@ label {
   border-radius: var(--radius-md);
   background: var(--card);
   backdrop-filter: blur(14px);
-  overflow: hidden;
+  overflow-y: auto;
   transition: opacity var(--transition), transform var(--transition);
 }
 
@@ -299,9 +299,17 @@ label {
   font-size: calc(clamp(18px, 3.1vw, 34px) * var(--font-scale));
   font-weight: 800;
   line-height: 1.08;
-  text-align: center;
+  text-align: left;
   text-shadow: 0 3px 12px rgba(0, 0, 0, 0.95);
   white-space: pre-wrap;
+}
+
+.subtitleText[contenteditable="true"]:focus {
+  outline: 1px solid var(--accent);
+}
+
+#retranslateButton[hidden] {
+  display: none;
 }
 
 .panel[data-theme='blue'] {
@@ -481,6 +489,7 @@ label {
 .focusMode .panel { padding: 10px; gap: 8px; }
 .focusMode .subtitleBox { grid-template-columns: 1fr 1fr; }
 .focusMode .subtitleColumn { padding: 12px 14px; border-radius: var(--radius-md); }
+.focusMode .gameWordsSection { display: none; }
 
 .mainHeader {
   display: flex;

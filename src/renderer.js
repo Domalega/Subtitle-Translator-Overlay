@@ -239,14 +239,68 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
   if (key === 'fontScale') {
     document.documentElement.style.setProperty('--font-scale', `${Number(value) / 100}`);
   }
-
   if (key === 'theme') {
     panel.dataset.theme = value;
     localStorage.setItem('subtitle-overlay-theme', value);
   }
+  if (key === 'font') {
+    applyFont(value);
+  }
+  if (key === 'deleteConfirm') {
+    localStorage.setItem('subtitle-confirm-delete', value);
+  }
 });
 
+window.overlayApi.onApplyUiSettings((settings) => {
+  if (settings.fontScale) document.documentElement.style.setProperty('--font-scale', `${Number(settings.fontScale) / 100}`);
+  if (settings.theme) { panel.dataset.theme = settings.theme; localStorage.setItem('subtitle-overlay-theme', settings.theme); }
+  if (settings.font) applyFont(settings.font);
+  if (settings.windowWidth && settings.windowHeight) {
+    window.overlayApi.setWindowSize(Number(settings.windowWidth), Number(settings.windowHeight));
+  }
+});
+
+function applyFont(font) {
+  const fonts = {
+    system: 'Inter, Segoe UI, Arial, sans-serif',
+    inter: 'Inter, sans-serif',
+    'segoe ui': '"Segoe UI", sans-serif',
+    arial: 'Arial, sans-serif',
+    consolas: 'Consolas, "Courier New", monospace',
+    'jetbrains mono': '"JetBrains Mono", Consolas, monospace',
+    'dot matrix': 'Consolas, "Courier New", monospace'
+  };
+  document.body.style.fontFamily = fonts[font] || fonts.system;
+  localStorage.setItem('subtitle-overlay-font', font);
+}
+
 panel.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
+applyFont(localStorage.getItem('subtitle-overlay-font') || 'system');
+
+async function loadInitSettings() {
+  try {
+    const s = await window.overlayApi.getUiSettings();
+    applyFont(s.font || 'system');
+    document.documentElement.style.setProperty('--font-scale', `${(s.fontScale || 100) / 100}`);
+    if (s.windowWidth && s.windowHeight) {
+      window.overlayApi.setWindowSize(Number(s.windowWidth), Number(s.windowHeight));
+    }
+  } catch (_) {}
+}
+loadInitSettings();
+
+const retranslateButton = document.getElementById('retranslateButton');
+retranslateButton.addEventListener('click', async () => {
+  const editedText = englishTextElement.textContent.trim();
+  if (!editedText) return;
+  statusElement.textContent = 'Translating...';
+  try {
+    russianTextElement.textContent = await window.overlayApi.translate(editedText);
+    statusElement.textContent = 'Translation updated';
+  } catch (_) {
+    statusElement.textContent = 'Translation failed';
+  }
+});
 
 focusToggleButton.addEventListener('click', () => {
   panel.classList.toggle('focusMode');
@@ -258,13 +312,28 @@ gameModeToggleButton.addEventListener('click', async () => {
   isGameMode = !isGameMode;
   gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
   gameModeToggleButton.classList.toggle('primary', isGameMode);
+  await window.overlayApi.setGameModeEnabled(isGameMode);
+  englishTextElement.contentEditable = isGameMode ? 'true' : 'false';
+  retranslateButton.hidden = !isGameMode;
   if (isGameMode) {
-    await window.overlayApi.startGameMode();
-    statusElement.textContent = 'Game OCR: Press Ctrl+Shift+T to translate screen, Ctrl+Shift+C to clear';
+    statusElement.textContent = 'Game OCR: Press Ctrl+Shift+T to translate screen';
+    englishTextElement.textContent = 'Select area with Ctrl+Shift+T';
+    russianTextElement.textContent = 'Translation will appear here';
   } else {
-    await window.overlayApi.stopGameMode();
-    statusElement.textContent = 'Game OCR stopped';
+    statusElement.textContent = '';
+    englishTextElement.contentEditable = 'false';
+    retranslateButton.hidden = true;
   }
+});
+
+window.overlayApi.onCaptureResult((data) => {
+  englishTextElement.textContent = data.original || 'No English text found';
+  russianTextElement.textContent = data.translation || '-';
+  retranslateButton.hidden = false;
+});
+
+window.overlayApi.onGameModeDisabled(() => {
+  statusElement.textContent = 'Enable Game mode first';
 });
 
 window.overlayApi.onWindowRestored(() => {

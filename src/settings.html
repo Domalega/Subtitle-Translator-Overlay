@@ -21,49 +21,76 @@
         <p class="hint">Choose only the original subtitle area at the bottom of the video.</p>
       </section>
 
-      <section class="card formGrid">
-        <label>
-          Theme
-          <select id="themeSelect">
-            <option value="green">Green</option>
-            <option value="blue">Blue</option>
-            <option value="purple">Purple</option>
-            <option value="dark">Dark</option>
-            <option value="nothing">Nothing Light</option>
-            <option value="nothing-dark">Nothing Dark</option>
-            <option value="nothing-os-light">Nothing OS Light</option>
-            <option value="nothing-os-dark">Nothing OS Dark</option>
-          </select>
-        </label>
-
-        <label>
-          Text size
-          <div class="sliderRow">
-            <input id="fontScale" type="range" min="70" max="150" value="100" />
-            <span class="sliderValue" id="fontScaleValue">100%</span>
-          </div>
-        </label>
-
-        <label>
-          Window width
-          <div class="sliderRow">
-            <input id="windowWidth" type="range" min="620" max="1500" value="980" />
-            <span class="sliderValue" id="windowWidthValue">980 px</span>
-          </div>
-        </label>
-
-        <label>
-          Window height
-          <div class="sliderRow">
-            <input id="windowHeight" type="range" min="260" max="760" value="360" />
-            <span class="sliderValue" id="windowHeightValue">360 px</span>
-          </div>
-        </label>
+      <section class="card">
+        <div class="accordionHeader" data-section="appearance">
+          <strong>Appearance</strong>
+          <span class="accordionChevron">▾</span>
+        </div>
+        <div class="accordionBody formGrid" id="sectionAppearance">
+          <label>
+            Theme
+            <select id="themeSelect">
+              <option value="green">Green</option>
+              <option value="blue">Blue</option>
+              <option value="purple">Purple</option>
+              <option value="dark">Dark</option>
+              <option value="nothing">Nothing Light</option>
+              <option value="nothing-dark">Nothing Dark</option>
+              <option value="nothing-os-light">Nothing OS Light</option>
+              <option value="nothing-os-dark">Nothing OS Dark</option>
+            </select>
+          </label>
+          <label>
+            Font
+            <select id="fontSelect">
+              <option value="system">System</option>
+              <option value="inter">Inter</option>
+              <option value="segoe ui">Segoe UI</option>
+              <option value="arial">Arial</option>
+              <option value="consolas">Consolas</option>
+              <option value="jetbrains mono">JetBrains Mono</option>
+              <option value="dot matrix">Dot Matrix</option>
+            </select>
+          </label>
+        </div>
       </section>
 
       <section class="card">
-        <strong style="display:block;margin-bottom:10px">Game OCR</strong>
-        <div class="formGrid">
+        <div class="accordionHeader" data-section="size">
+          <strong>Overlay size</strong>
+          <span class="accordionChevron">▸</span>
+        </div>
+        <div class="accordionBody formGrid" id="sectionSize">
+          <label>
+            Text size
+            <div class="sliderRow">
+              <input id="fontScale" type="range" min="70" max="150" value="100" />
+              <span class="sliderValue" id="fontScaleValue">100%</span>
+            </div>
+          </label>
+          <label>
+            Window width
+            <div class="sliderRow">
+              <input id="windowWidth" type="range" min="620" max="1500" value="980" />
+              <span class="sliderValue" id="windowWidthValue">980 px</span>
+            </div>
+          </label>
+          <label>
+            Window height
+            <div class="sliderRow">
+              <input id="windowHeight" type="range" min="260" max="760" value="360" />
+              <span class="sliderValue" id="windowHeightValue">360 px</span>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="accordionHeader" data-section="gameOcr">
+          <strong>Game OCR</strong>
+          <span class="accordionChevron">▸</span>
+        </div>
+        <div class="accordionBody formGrid" id="sectionGameOcr">
           <label>
             Mode
             <select id="gameOcrMode">
@@ -71,7 +98,6 @@
               <option value="live">Live scan</option>
             </select>
           </label>
-
           <label>
             Live scan interval
             <select id="gameOcrInterval">
@@ -81,29 +107,69 @@
               <option value="10">10 sec</option>
             </select>
           </label>
-
+          <div id="gameOcrOverlaySettings">
+            <label>
+              Overlay width
+              <div class="sliderRow">
+                <input id="gameCardWidth" type="range" min="300" max="800" value="480" />
+                <span class="sliderValue" id="gameCardWidthValue">480 px</span>
+              </div>
+            </label>
+            <label>
+              Overlay font size
+              <div class="sliderRow">
+                <input id="gameCardFontSize" type="range" min="11" max="20" value="14" />
+                <span class="sliderValue" id="gameCardFontSizeValue">14 px</span>
+              </div>
+            </label>
+            <label>
+              Overlay opacity
+              <div class="sliderRow">
+                <input id="gameCardOpacity" type="range" min="50" max="100" value="100" />
+                <span class="sliderValue" id="gameCardOpacityValue">100%</span>
+              </div>
+            </label>
+          </div>
           <label>
-            Overlay width
-            <div class="sliderRow">
-              <input id="gameCardWidth" type="range" min="300" max="800" value="480" />
-              <span class="sliderValue" id="gameCardWidthValue">480 px</span>
-            </div>
+            Hotkey
+            <input type="text" id="gameHotkey" placeholder="CommandOrControl+Shift+T" />
           </label>
+        </div>
+      </section>
 
-          <label>
-            Overlay font size
-            <div class="sliderRow">
-              <input id="gameCardFontSize" type="range" min="11" max="20" value="14" />
-              <span class="sliderValue" id="gameCardFontSizeValue">14 px</span>
-            </div>
+      <section class="card">
+        <div class="accordionHeader" data-section="dictionary">
+          <strong>Dictionary</strong>
+          <span class="accordionChevron">▸</span>
+        </div>
+        <div class="accordionBody formGrid" id="sectionDictionary">
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="deleteConfirmToggle" checked />
+            Confirm before deleting words
           </label>
+        </div>
+      </section>
 
+      <section class="card">
+        <div class="accordionHeader" data-section="context">
+          <strong>Context</strong>
+          <span class="accordionChevron">▸</span>
+        </div>
+        <div class="accordionBody formGrid" id="sectionContext">
           <label>
-            Overlay opacity
-            <div class="sliderRow">
-              <input id="gameCardOpacity" type="range" min="50" max="100" value="100" />
-              <span class="sliderValue" id="gameCardOpacityValue">100%</span>
-            </div>
+            Context examples count
+            <select id="contextCountSelect">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
           </label>
         </div>
       </section>

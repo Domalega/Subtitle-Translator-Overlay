@@ -8,8 +8,6 @@ const wordChips = document.getElementById('wordChips');
 const wordsCard = document.getElementById('wordsCard');
 const statusElement = document.getElementById('status');
 
-let savedWords = new Set();
-
 document.body.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
@@ -58,23 +56,22 @@ function showResult(data) {
 
       const addBtn = document.createElement('span');
       addBtn.className = 'chipAdd';
-      if (savedWords.has(w.english.toLowerCase())) {
-        addBtn.classList.add('saved');
-        addBtn.textContent = '\u2713';
-      } else {
-        addBtn.textContent = '+';
-        addBtn.addEventListener('click', async () => {
-          addBtn.textContent = '...';
-          await window.overlayApi.translateWindowAddWord({
-            english: w.english,
-            russian: w.russian,
-            sourceText: w.english
-          });
-          savedWords.add(w.english.toLowerCase());
+      addBtn.textContent = '+';
+      addBtn.addEventListener('click', async () => {
+        addBtn.textContent = '...';
+        const result = await window.overlayApi.dictionaryAdd({
+          english: w.english,
+          russian: '',
+          sourceText: w.english
+        });
+        if (!result.duplicate) {
           addBtn.classList.add('saved');
           addBtn.textContent = '\u2713';
-        });
-      }
+        } else {
+          addBtn.classList.add('saved');
+          addBtn.textContent = '\u2713';
+        }
+      });
       chip.append(addBtn);
       wordChips.append(chip);
     });
@@ -84,4 +81,3 @@ function showResult(data) {
 }
 
 window.overlayApi.onTranslateResult((data) => showResult(data));
-window.overlayApi.onTranslateSavedWords((words) => { savedWords = new Set(words.map((w) => w.toLowerCase())); });

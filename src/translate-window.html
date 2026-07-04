@@ -5,30 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Translation</title>
     <link rel="stylesheet" href="tool-window.css" />
-    <style>
-      .textBlock {
-        padding: 12px; border-radius: 10px;
-        background: var(--card); border: 1px solid var(--card-border);
-        white-space: pre-wrap; word-break: break-word;
-        max-height: 160px; overflow-y: auto; font-size: 14px;
-      }
-      .wordChips {
-        display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;
-      }
-      .wordChip {
-        display: flex; align-items: center; gap: 4px;
-        padding: 3px 10px; border-radius: 999px;
-        background: var(--control-1); border: 1px solid var(--card-border);
-        font-size: 13px;
-      }
-      .wordChip .chipAdd {
-        padding: 1px 7px; border-radius: 999px; border: none;
-        background: rgba(34,197,94,0.35); color: #4ade80; cursor: pointer; font-size: 11px;
-      }
-      .wordChip .chipAdd:hover { background: #22c55e; color: #fff; }
-      .wordChip .chipAdd.saved { background: transparent; color: var(--muted); cursor: default; }
-      .copyButtons { display: flex; gap: 8px; margin-top: 4px; }
-    </style>
   </head>
   <body>
     <main class="toolWindow">
@@ -42,7 +18,7 @@
 
       <section class="card">
         <strong>Original</strong>
-        <div class="textBlock" id="originalText">No capture yet</div>
+        <div class="translateTextBlock" id="originalText">No capture yet</div>
         <div class="copyButtons">
           <button id="copyOriginal">Copy original</button>
         </div>
@@ -50,7 +26,7 @@
 
       <section class="card">
         <strong>Translation</strong>
-        <div class="textBlock" id="translatedText">-</div>
+        <div class="translateTextBlock" id="translatedText">-</div>
         <div class="copyButtons">
           <button id="copyTranslation">Copy translation</button>
         </div>

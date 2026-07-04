@@ -162,7 +162,12 @@ async function renderDictionary() {
     remove.type = 'button';
     remove.textContent = '\uD83D\uDDD1';
     remove.title = 'Delete word';
-    remove.addEventListener('click', () => {
+    remove.addEventListener('click', async () => {
+      const confirmSetting = localStorage.getItem('subtitle-confirm-delete');
+      if (confirmSetting === 'false') {
+        await window.overlayApi.dictionaryDelete(entry.id);
+        return;
+      }
       wordToDeleteId = entry.id;
       wordToDeleteElement = item;
       wordToDeleteSpan.textContent = entry.english || entry.sourceText;

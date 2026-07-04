@@ -26,14 +26,19 @@ contextBridge.exposeInMainWorld('overlayApi', {
   completeCaptureTranslate: (area) => ipcRenderer.invoke('complete-capture-translate', area),
   cancelCaptureTranslate: () => ipcRenderer.invoke('cancel-capture-translate'),
   openTranslateWindow: () => ipcRenderer.invoke('open-translate-window'),
-  translateWindowAddWord: (entry) => ipcRenderer.invoke('translate-window-add-word', entry),
+  setGameModeEnabled: (enabled) => ipcRenderer.invoke('set-game-mode-enabled', enabled),
+  getUiSettings: () => ipcRenderer.invoke('get-ui-settings'),
+  setGameHotkey: (accelerator) => ipcRenderer.invoke('set-game-hotkey', accelerator),
   getGameSettings: () => ipcRenderer.invoke('get-game-settings'),
   setGameSetting: (key, value) => ipcRenderer.invoke('set-game-setting', key, value),
+  onCaptureResult: (callback) => {
+    ipcRenderer.on('capture-result', (_event, data) => callback(data));
+  },
+  onGameModeDisabled: (callback) => {
+    ipcRenderer.on('game-mode-disabled', callback);
+  },
   onTranslateResult: (callback) => {
     ipcRenderer.on('translate-result', (_event, data) => callback(data));
-  },
-  onTranslateSavedWords: (callback) => {
-    ipcRenderer.on('translate-saved-words', (_event, words) => callback(words));
   },
   onToggleControls: (callback) => {
     ipcRenderer.on('toggle-controls', callback);
@@ -52,6 +57,9 @@ contextBridge.exposeInMainWorld('overlayApi', {
   },
   onApplyUiSetting: (callback) => {
     ipcRenderer.on('apply-ui-setting', (_event, setting) => callback(setting));
+  },
+  onApplyUiSettings: (callback) => {
+    ipcRenderer.on('apply-ui-settings', (_event, settings) => callback(settings));
   },
   onDictionaryChanged: (callback) => {
     ipcRenderer.on('dictionary-changed', callback);

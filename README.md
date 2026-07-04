@@ -1,42 +1,42 @@
-# Subtitle Translation Overlay
+# Subtitle Translator Overlay
 
-Прозрачное окно поверх фильма, которое показывает русский перевод английских `.srt` субтитров. Оригинальные субтитры фильма не меняются.
+An Electron desktop overlay application that displays Russian translations for English subtitles (via Screen OCR) and features an experimental Screen OCR mode for on-screen subtitle translation.
 
-Также есть экспериментальный режим `Screen OCR`, который читает английские субтитры с нижней части экрана без `.srt` файла.
+## Features
 
-## Запуск
+-   **Transparent Overlay**: Always-on-top window for seamless integration with video playback.
+-   **Screen OCR**: Translate on-screen English subtitles without an `.srt` file.
+    -   Select OCR area for precise text capture.
+-   **Dictionary**: Add words from subtitles to a personal dictionary.
+    -   Word deletion, search, study mode (flashcards), and export (CSV/JSON).
+-   **Focus Mode**: Minimal interface showing only subtitles and essential controls.
+-   **Settings**: Customize theme, font scale, window size.
+-   **Global Shortcuts**:
+    -   `Ctrl+Shift+O`: Restore main window.
+    -   `Ctrl+Shift+S`: Stop OCR.
+-   **Modern UI/UX**: Unified design, reduced transparency, backdrop blur effects, and smooth animations.
 
-1. Установите Node.js.
-2. В этой папке выполните `npm install`.
-3. Запустите `npm start`.
+## Installation
 
-Если зависимости уже установлены, можно просто открыть файл `Start Subtitle Overlay.cmd` двойным кликом.
+1.  **Clone the repository**: `git clone https://github.com/Domalega/Subtitle-Translator-Overlay.git`
+2.  **Navigate to the project directory**: `cd Subtitle-Translator-Overlay`
+3.  **Install dependencies**: `npm install`
+4.  **Run the application**: `npm start`
 
-## Сборка без консоли
+Alternatively, for a portable Windows `.exe`, run `npm run build`. The executable will be in the `dist/` folder.
 
-Выполните `npm run build`. Готовый Windows `.exe` появится в папке `dist/` и запускается как обычное приложение без окна консоли.
+## Usage
 
-## Как пользоваться
+### With Screen OCR
 
-1. Откройте фильм и включите английские субтитры в самом плеере.
-2. Найдите или скачайте английский `.srt` файл для той же серии.
-3. В приложении нажмите `Open SRT` и выберите файл.
-4. Запустите фильм и нажмите `Start` в момент начала субтитров.
-5. Если перевод спешит или отстаёт, используйте `-5s`, `+5s` или поле `Offset`.
-6. Нажмите `Hide controls`, чтобы оставить только перевод.
-7. Нажмите `Compact view`, чтобы оставить компактный вид с переводом и безопасными кнопками.
-8. Восстановить окно можно горячей клавишей `Ctrl+Shift+O`.
-9. Остановить OCR можно горячей клавишей `Ctrl+Shift+S`.
+1.  Enable English subtitles in your video player.
+2.  Click `Select OCR area` and drag to select the region containing the subtitles.
+3.  Position the app window so it doesn't cover the selected OCR area.
+4.  Click `Start` (or `Read once` for a single capture) to begin OCR.
+5.  In automatic mode, OCR scans the screen approximately every 3 seconds to minimize system load.
 
-Перевод выполняется через Google Translate endpoint без API-ключа и кэшируется локально. Если endpoint временно недоступен, синхронизация оригинальных субтитров продолжит работать, но перевод для новых строк не появится.
+**Note**: OCR relies on visual filtering. Do not place the app window over the selected OCR area, as it will be included in the capture.
 
-## Режим без файла
+## Development
 
-1. Включите английские субтитры в плеере.
-2. Нажмите `Select OCR area` и выделите мышью только область с оригинальными субтитрами.
-3. Разместите окно приложения так, чтобы оно не закрывало оригинальные субтитры снизу.
-4. Нажмите `Read once` для разового перевода или `Screen OCR: off`, чтобы стало `Screen OCR: on`.
-5. В автоматическом режиме OCR читает экран примерно раз в 3 секунды, чтобы не грузить систему.
-6. Окно управления всегда остаётся кликабельным. Если оно мешает плееру, переместите его выше/сбоку или включите `Compact view`.
-
-Перед распознаванием изображение фильтруется: светлые буквы остаются белыми, остальное превращается в чёрный фон. Не размещайте окно приложения поверх выбранной OCR-области, иначе оно тоже попадёт в снимок.
+Built with Electron. Main entry point: `src/main.js`.

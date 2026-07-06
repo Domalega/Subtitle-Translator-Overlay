@@ -1,1 +1,15 @@
 /.opencode
+# Build output
+dist/
+
+# Electron build cache
+release/
+
+# Installer artifacts
+*.exe
+*.msi
+*.zip
+*.7z
+
+# Node
+node_modules/

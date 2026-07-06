@@ -21,8 +21,27 @@ let ocrTimer = null;
 let lastOcrText = '';
 let hasOcrArea = false;
 let isOcrBusy = false;
+let lastNormalizedOcrText = '';
+let lastGoodEnglish = '';
+let lastGoodRussian = '';
+let ocrTranslationCache = new Map();
+const OCR_CACHE_MAX = 500;
+let ocrCacheInsertOrder = [];
+let candidateTimer = null;
+let candidateText = '';
+let candidateNormalized = '';
+let emptyFrameCount = 0;
+let holdClearTimer = null;
+let translateBusy = false;
+let pendingTranslationKey = '';
+let pendingTranslationText = '';
+let activeTranslationKey = '';
+let latestRequestedTranslationKey = '';
+const CANDIDATE_TIMEOUT_MS = 180;
+const EMPTY_FRAME_THRESHOLD = 3;
+const HOLD_CLEAR_MS = 2000;
 
-const ocrIntervalMs = 3000;
+const ocrIntervalMs = 1000;
 
 const cachePrefix = 'subtitle-translation:';
 
@@ -167,6 +186,115 @@ function isLikelySubtitle(text) {
   return !/^\d{1,2}:\d{2}/.test(text);
 }
 
+function normalizeOcrText(text) {
+  return text
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^\s*[\-–—]\s*/, '')
+    .trim()
+    .toLowerCase();
+}
+
+function isSimilarText(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen < 20) return false;
+  const minLen = Math.min(a.length, b.length);
+  if (minLen / maxLen < 0.55) return false;
+  const wordsA = a.split(/\s+/);
+  const wordsB = b.split(/\s+/);
+  const setA = new Set(wordsA);
+  const setB = new Set(wordsB);
+  let intersection = 0;
+  for (const w of setA) {
+    if (setB.has(w)) intersection++;
+  }
+  const union = setA.size + setB.size - intersection;
+  if (union === 0) return false;
+  return (intersection / union) >= 0.75;
+}
+
+function getCachedTranslation(normalizedKey) {
+  if (ocrTranslationCache.has(normalizedKey)) return ocrTranslationCache.get(normalizedKey);
+  const localKey = 'ocr-norm-' + normalizedKey;
+  const cached = localStorage.getItem(localKey);
+  if (cached) {
+    ocrTranslationCache.set(normalizedKey, cached);
+    return cached;
+  }
+  return null;
+}
+
+function setCachedTranslation(normalizedKey, translation) {
+  if (!normalizedKey || normalizedKey.length < 3) return;
+  if (!/[a-zA-Z]/.test(normalizedKey)) return;
+  if (!translation) return;
+  if (!ocrTranslationCache.has(normalizedKey)) {
+    ocrCacheInsertOrder.push(normalizedKey);
+    if (ocrCacheInsertOrder.length > OCR_CACHE_MAX) {
+      const oldest = ocrCacheInsertOrder.shift();
+      ocrTranslationCache.delete(oldest);
+      try { localStorage.removeItem('ocr-norm-' + oldest); } catch (_) {}
+    }
+  }
+  ocrTranslationCache.set(normalizedKey, translation);
+  try { localStorage.setItem('ocr-norm-' + normalizedKey, translation); } catch (_) {}
+}
+
+function scheduleTranslation(normalizedKey, displayText) {
+  latestRequestedTranslationKey = normalizedKey;
+  pendingTranslationKey = normalizedKey;
+  pendingTranslationText = displayText;
+  processNextTranslation();
+}
+
+async function processNextTranslation() {
+  if (translateBusy) return;
+
+  translateBusy = true;
+  try {
+    while (pendingTranslationKey) {
+      const key = pendingTranslationKey;
+      const text = pendingTranslationText;
+      pendingTranslationKey = '';
+      pendingTranslationText = '';
+      activeTranslationKey = key;
+
+      const cached = getCachedTranslation(key);
+      if (cached) {
+        if (key === latestRequestedTranslationKey) {
+          russianTextElement.textContent = cached;
+          lastGoodRussian = cached;
+          statusElement.textContent = 'Screen OCR: subtitle translated';
+        }
+        activeTranslationKey = '';
+        continue;
+      }
+
+      try {
+        const translation = await translate(text);
+        if (key !== latestRequestedTranslationKey) {
+          activeTranslationKey = '';
+          continue;
+        }
+        russianTextElement.textContent = translation;
+        lastGoodRussian = translation;
+        setCachedTranslation(key, translation);
+        statusElement.textContent = 'Screen OCR: subtitle translated';
+      } catch (_) {
+        if (key === latestRequestedTranslationKey) {
+          statusElement.textContent = 'Translation failed';
+        }
+      }
+
+      activeTranslationKey = '';
+    }
+  } finally {
+    translateBusy = false;
+  }
+}
+
 async function readOcrSubtitle({ scheduleNext = true } = {}) {
   if (isOcrBusy) {
     statusElement.textContent = 'OCR is already reading. Wait a moment.';
@@ -184,17 +312,61 @@ async function readOcrSubtitle({ scheduleNext = true } = {}) {
 
   try {
     const text = await window.overlayApi.readScreenSubtitle();
-    if (isLikelySubtitle(text) && text !== lastOcrText) {
-      lastOcrText = text;
-      englishTextElement.textContent = text;
-      russianTextElement.textContent = 'Translating...';
-      russianTextElement.textContent = await translate(text);
-      statusElement.textContent = 'Screen OCR: subtitle translated';
-    } else if (isLikelySubtitle(text)) {
-      statusElement.textContent = 'Same subtitle, already translated';
-    } else {
+
+    if (!isLikelySubtitle(text)) {
+      emptyFrameCount++;
+      if (emptyFrameCount >= EMPTY_FRAME_THRESHOLD && !holdClearTimer) {
+        holdClearTimer = window.setTimeout(() => {
+          englishTextElement.textContent = '';
+          russianTextElement.textContent = '';
+          lastNormalizedOcrText = '';
+          lastGoodEnglish = '';
+          lastGoodRussian = '';
+          candidateText = '';
+          candidateNormalized = '';
+          holdClearTimer = null;
+        }, HOLD_CLEAR_MS);
+      }
       statusElement.textContent = text ? `Ignored OCR noise: ${text.slice(0, 40)}` : 'No subtitle detected in selected area';
+      return;
     }
+
+    emptyFrameCount = 0;
+    window.clearTimeout(holdClearTimer);
+    holdClearTimer = null;
+
+    const normalized = normalizeOcrText(text);
+
+    if (normalized === lastNormalizedOcrText) {
+      statusElement.textContent = 'Same subtitle, already translated';
+      return;
+    }
+
+    if (isSimilarText(normalized, lastNormalizedOcrText)) {
+      statusElement.textContent = 'Similar subtitle, reusing previous translation';
+      return;
+    }
+
+    const base = candidateNormalized || lastNormalizedOcrText;
+    const isGrowing = base && (normalized.startsWith(base) || base.startsWith(normalized));
+
+    candidateText = text;
+    candidateNormalized = normalized;
+
+    englishTextElement.textContent = text;
+    if (!russianTextElement.textContent || russianTextElement.textContent === 'Translation will appear here') {
+      russianTextElement.textContent = 'Translating...';
+    }
+
+    window.clearTimeout(candidateTimer);
+    candidateTimer = window.setTimeout(() => {
+      lastNormalizedOcrText = candidateNormalized;
+      lastGoodEnglish = candidateText;
+      scheduleTranslation(candidateNormalized, candidateText);
+      statusElement.textContent = 'Screen OCR: subtitle queued for translation';
+    }, CANDIDATE_TIMEOUT_MS);
+
+    statusElement.textContent = isGrowing ? 'Screen OCR: subtitle growing, waiting...' : 'Screen OCR: subtitle detected, translating...';
   } catch (error) {
     statusElement.textContent = `Screen OCR error: ${error.message}`;
   } finally {
@@ -212,10 +384,34 @@ function setOcrRunning(nextRunning) {
   if (isOcrRunning) {
     setRunning(false);
     currentIndex = -1;
-    statusElement.textContent = 'Screen OCR: slow mode, one read every 3 seconds';
+    lastNormalizedOcrText = '';
+    candidateTimer = null;
+    candidateText = '';
+    candidateNormalized = '';
+    emptyFrameCount = 0;
+    holdClearTimer = null;
+    translateBusy = false;
+    pendingTranslationKey = '';
+    pendingTranslationText = '';
+    activeTranslationKey = '';
+    latestRequestedTranslationKey = '';
+    ocrTranslationCache = new Map();
+    statusElement.textContent = 'Screen OCR: scanning every 1 second';
     readOcrSubtitle();
   } else {
     window.clearTimeout(ocrTimer);
+    window.clearTimeout(candidateTimer);
+    window.clearTimeout(holdClearTimer);
+    candidateTimer = null;
+    candidateText = '';
+    candidateNormalized = '';
+    emptyFrameCount = 0;
+    holdClearTimer = null;
+    translateBusy = false;
+    pendingTranslationKey = '';
+    pendingTranslationText = '';
+    activeTranslationKey = '';
+    latestRequestedTranslationKey = '';
     statusElement.textContent = '';
   }
 }
@@ -223,6 +419,18 @@ function setOcrRunning(nextRunning) {
 function stopOcr(message = 'Screen OCR stopped') {
   isOcrRunning = false;
   window.clearTimeout(ocrTimer);
+  window.clearTimeout(candidateTimer);
+  window.clearTimeout(holdClearTimer);
+  candidateTimer = null;
+  candidateText = '';
+  candidateNormalized = '';
+  emptyFrameCount = 0;
+  holdClearTimer = null;
+  translateBusy = false;
+  pendingTranslationKey = '';
+  pendingTranslationText = '';
+  activeTranslationKey = '';
+  latestRequestedTranslationKey = '';
   playPauseButton.textContent = isRunning ? 'Pause' : 'Start';
   statusElement.textContent = message;
 }

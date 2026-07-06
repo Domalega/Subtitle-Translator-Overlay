@@ -1,6 +1,6 @@
 {
   "name": "subtitle-translation-overlay",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "productName": "Subtitle Translator Overlay",
@@ -11,7 +11,7 @@
     "build": "electron-builder --win portable",
     "dist": "electron-builder --win"
   },
-  "author": "LocalOpenCode",
+  "author": "Domalega",
   "build": {
     "appId": "local.subtitle.translator.overlay",
     "productName": "Subtitle Translator Overlay",

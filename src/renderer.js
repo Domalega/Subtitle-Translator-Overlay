@@ -11,6 +11,8 @@ const russianTextElement = document.getElementById('russianText');
 const panel = document.querySelector('.panel');
 const { SubtitleStabilizer } = window.SubtitleStabilizerModule;
 const { MainPanelOutput } = window.MainPanelOutputModule;
+const { NearSourceOutput } = window.NearSourceOutputModule;
+const { OutputRouter } = window.OutputRouterModule;
 const { ScreenOcrCoordinator } = window.ScreenOcrCoordinatorModule;
 
 let cues = [];
@@ -201,8 +203,16 @@ const mainPanelOutput = new MainPanelOutput({
   statusElement
 });
 
+const nearSourceOutput = new NearSourceOutput({
+  showOverlay: (payload) => window.overlayApi.showNearSourceOverlay(payload),
+  hideOverlay: () => window.overlayApi.hideNearSourceOverlay(),
+  clearOverlay: () => window.overlayApi.clearNearSourceOverlay(),
+  updateOverlaySettings: (settings) => window.overlayApi.updateNearSourceSettings(settings)
+});
+const outputRouter = new OutputRouter({ mainOutput: mainPanelOutput, nearSourceOutput });
+
 const screenOcrCoordinator = new ScreenOcrCoordinator({
-  output: mainPanelOutput,
+  output: outputRouter,
   stabilizer: new SubtitleStabilizer({ emptyFrameThreshold: EMPTY_FRAME_THRESHOLD }),
   readOcr: () => window.overlayApi.readScreenSubtitle(),
   translate: (text, options) => translate(text, options),
@@ -231,6 +241,8 @@ dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDicti
 settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
+  if (key === 'displayMode') outputRouter.setDisplayMode(value);
+  if (key.startsWith('nearSource')) nearSourceOutput.setSettings({ [key]: value });
   if (key === 'fontScale') {
     document.documentElement.style.setProperty('--font-scale', `${Number(value) / 100}`);
   }
@@ -247,6 +259,8 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 });
 
 window.overlayApi.onApplyUiSettings((settings) => {
+  outputRouter.setDisplayMode(settings.displayMode);
+  nearSourceOutput.setSettings(settings);
   if (settings.fontScale) document.documentElement.style.setProperty('--font-scale', `${Number(settings.fontScale) / 100}`);
   if (settings.theme) { panel.dataset.theme = settings.theme; localStorage.setItem('subtitle-overlay-theme', settings.theme); }
   if (settings.font) applyFont(settings.font);
@@ -284,6 +298,8 @@ async function loadInitSettings() {
     if (s.windowWidth && s.windowHeight) {
       window.overlayApi.setWindowSize(Number(s.windowWidth), Number(s.windowHeight));
     }
+    outputRouter.setDisplayMode(s.displayMode);
+    nearSourceOutput.setSettings(s);
   } catch (_) {}
 }
 loadInitSettings();
@@ -318,7 +334,12 @@ gameModeToggleButton.addEventListener('click', async () => {
   gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
   gameModeToggleButton.classList.toggle('primary', isGameMode);
   await window.overlayApi.setGameModeEnabled(isGameMode);
-  if (isGameMode) stopOcr('Screen OCR stopped for Game mode');
+  if (isGameMode) {
+    outputRouter.setGameMode(true);
+    stopOcr('Screen OCR stopped for Game mode');
+  } else {
+    outputRouter.setGameMode(false);
+  }
   englishTextElement.contentEditable = isGameMode ? 'true' : 'false';
   retranslateButton.hidden = !isGameMode;
   if (isGameMode) {

@@ -58,6 +58,7 @@
       this.resetVolatileState();
       this.onRunningChange(false);
       this.output.setStatus(message);
+      if (typeof this.output.setVisible === 'function') this.output.setVisible(false);
     }
 
     readOnce() {

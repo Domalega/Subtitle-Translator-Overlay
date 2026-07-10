@@ -1,0 +1,5 @@
+:root { --font-size: 24px; --opacity: .7; --max-width: 900px; --max-lines: 3; }
+html, body { margin: 0; background: transparent; overflow: hidden; }
+body { font-family: "Segoe UI", Arial, sans-serif; color: #f7f7f7; }
+.card { box-sizing: border-box; width: min(var(--max-width), calc(100vw - 2px)); padding: 10px 16px; border-radius: 8px; background: rgba(12, 16, 20, var(--opacity)); text-align: center; font-size: var(--font-size); font-weight: 600; line-height: 1.25; text-shadow: 0 1px 3px #000; overflow: hidden; }
+#translation { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--max-lines); overflow: hidden; overflow-wrap: anywhere; }

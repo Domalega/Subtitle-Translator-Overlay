@@ -22,6 +22,28 @@
       </section>
 
       <section class="card">
+        <div class="accordionHeader" data-section="display">
+          <strong>Display mode</strong>
+          <span class="accordionChevron">▸</span>
+        </div>
+        <div class="accordionBody formGrid" id="sectionDisplay">
+          <label>Mode
+            <select id="displayMode"><option value="panel">Main panel</option><option value="near-source">Near original subtitles</option></select>
+          </label>
+          <div id="nearSourceSettings" hidden>
+            <label>Placement
+              <select id="nearSourcePlacement"><option value="auto">Auto</option><option value="below">Below</option><option value="above">Above</option></select>
+            </label>
+            <label>Vertical offset <div class="sliderRow"><input id="nearSourceVerticalOffset" type="range" min="0" max="100" value="10" /><span class="sliderValue" id="nearSourceVerticalOffsetValue">10 px</span></div></label>
+            <label>Font size <div class="sliderRow"><input id="nearSourceFontSize" type="range" min="12" max="64" value="24" /><span class="sliderValue" id="nearSourceFontSizeValue">24 px</span></div></label>
+            <label>Background opacity <div class="sliderRow"><input id="nearSourceBackgroundOpacity" type="range" min="10" max="100" value="70" /><span class="sliderValue" id="nearSourceBackgroundOpacityValue">70%</span></div></label>
+            <label>Maximum width <div class="sliderRow"><input id="nearSourceMaxWidth" type="range" min="240" max="1400" value="900" /><span class="sliderValue" id="nearSourceMaxWidthValue">900 px</span></div></label>
+            <label>Maximum lines <div class="sliderRow"><input id="nearSourceMaxLines" type="range" min="1" max="6" value="3" /><span class="sliderValue" id="nearSourceMaxLinesValue">3</span></div></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
         <div class="accordionHeader" data-section="appearance">
           <strong>Appearance</strong>
           <span class="accordionChevron">▾</span>
@@ -87,7 +109,7 @@
 
       <section class="card">
         <div class="accordionHeader" data-section="gameOcr">
-          <strong>Game OCR</strong>
+          <strong>Game mode</strong>
           <span class="accordionChevron">▸</span>
         </div>
         <div class="accordionBody formGrid" id="sectionGameOcr">

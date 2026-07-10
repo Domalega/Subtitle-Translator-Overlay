@@ -11,7 +11,14 @@
     font: 'system',
     hotkey: 'CommandOrControl+Shift+T',
     deleteConfirm: true,
-    contextCount: 5
+    contextCount: 5,
+    displayMode: 'panel',
+    nearSourcePlacement: 'auto',
+    nearSourceVerticalOffset: 10,
+    nearSourceFontSize: 24,
+    nearSourceBackgroundOpacity: 0.70,
+    nearSourceMaxWidth: 900,
+    nearSourceMaxLines: 3
   });
 
   const THEMES = new Set(['green', 'blue', 'purple', 'dark', 'nothing', 'nothing-dark', 'nothing-os-light', 'nothing-os-dark']);
@@ -39,6 +46,17 @@
       ? source.deleteConfirm
       : DEFAULT_UI_SETTINGS.deleteConfirm;
     merged.contextCount = clampNumber(source.contextCount, DEFAULT_UI_SETTINGS.contextCount, 1, 10);
+    merged.displayMode = source.displayMode === 'near-source' ? 'near-source' : 'panel';
+    merged.nearSourcePlacement = ['auto', 'below', 'above'].includes(source.nearSourcePlacement)
+      ? source.nearSourcePlacement : DEFAULT_UI_SETTINGS.nearSourcePlacement;
+    merged.nearSourceVerticalOffset = clampNumber(source.nearSourceVerticalOffset, DEFAULT_UI_SETTINGS.nearSourceVerticalOffset, 0, 100);
+    merged.nearSourceFontSize = clampNumber(source.nearSourceFontSize, DEFAULT_UI_SETTINGS.nearSourceFontSize, 12, 64);
+    const opacity = Number(source.nearSourceBackgroundOpacity);
+    merged.nearSourceBackgroundOpacity = Number.isFinite(opacity)
+      ? Math.min(1, Math.max(0.1, Math.round(opacity * 100) / 100))
+      : DEFAULT_UI_SETTINGS.nearSourceBackgroundOpacity;
+    merged.nearSourceMaxWidth = clampNumber(source.nearSourceMaxWidth, DEFAULT_UI_SETTINGS.nearSourceMaxWidth, 240, 1400);
+    merged.nearSourceMaxLines = clampNumber(source.nearSourceMaxLines, DEFAULT_UI_SETTINGS.nearSourceMaxLines, 1, 6);
 
     return merged;
   }

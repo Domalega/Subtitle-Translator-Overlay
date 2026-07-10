@@ -12,6 +12,7 @@ Main windows currently loaded by `BrowserWindow.loadFile()` are:
 - `select.html`: Screen OCR area selection window.
 - `capture-select.html`: Game mode capture selection window.
 - `translate-window.html`: legacy translation window, kept for a later architecture pass.
+- `near-source-overlay.html`: independent transparent translation-only window.
 
 The main process keeps `contextIsolation` enabled and `nodeIntegration` disabled for renderer windows.
 
@@ -29,8 +30,18 @@ The preload contract is intentionally preserved. Existing methods still use `ipc
 - `subtitle-stabilizer.js`
 - `main-panel-output.js`
 - `screen-ocr-coordinator.js`
+- `output-router.js`
+- `near-source-output.js`
 
 These modules do not require Electron and can be tested with `node:test`.
+
+## Output Contract And Router
+
+`ScreenOcrCoordinator` uses only an output contract: `showRecognizedText(text)`, `showTranslationPending(sourceText)`, `showTranslation(translatedText, sourceText)`, `showTranslationError(error)`, `setStatus(status)`, `clear()`, and `setVisible(visible)`. It has no DOM or `BrowserWindow` dependency.
+
+`OutputRouter` always forwards Screen OCR output to `MainPanelOutput`. In `near-source` mode it also forwards successful translations to `NearSourceOutput`; pending and errors preserve the last successful translation. It retains the last recognized text and successful translation. Game mode is explicitly excluded from the near-source route.
+
+`NearSourceOutput` is an adapter with injected `showOverlay`, `hideOverlay`, `clearOverlay`, and `updateOverlaySettings` dependencies. It contains no Electron API or OCR/translation logic.
 
 ## Screen OCR Flow
 
@@ -44,6 +55,18 @@ These modules do not require Electron and can be tested with `node:test`.
 8. Accepted candidates are translated through the existing `translate` IPC path.
 9. `MainPanelOutput` updates the main English and Russian text columns.
 
+## Near-Source Overlay
+
+The main process creates one reusable `nearSourceWindow`. It is transparent, frameless, always-on-top, taskbar-free, non-resizable, non-focusable, created hidden, and has `contextIsolation: true` and `nodeIntegration: false`. Mouse events are ignored and it is displayed with `showInactive()` only after a renderer measurement.
+
+The overlay renderer uses `textContent`, measures its card on `requestAnimationFrame`, suppresses identical measurements, and returns its size. Main clamps the size and uses `near-source-position.js` to put it below the anchor when possible, otherwise above it. It is hidden on Stop, panel mode, and Game mode; it is closed with the main window.
+
+## Coordinates
+
+`select.js` emits local DIP coordinates inside the primary-display selection window. Existing `ocrArea` remains a physical-pixel crop: main multiplies local coordinates by the primary display `scaleFactor` before `nativeImage.crop()`.
+
+`ocrAnchorBoundsDip` is separate: main adds `display.bounds` to local DIP coordinates and uses it only for BrowserWindow placement. BrowserWindow bounds and `display.workArea` are DIP. This stage targets the primary monitor; it does not claim complete multi-monitor or DPI crop support. Without an anchor, near-source mode asks the user to select the OCR area again rather than guessing.
+
 ## Game Mode Flow
 
 1. The user enables `Game mode` in the main window.
@@ -55,6 +78,7 @@ These modules do not require Electron and can be tested with `node:test`.
 7. Renderer displays the Game mode result in the main window.
 
 Game mode still outputs to the main overlay. The legacy `translate-window` is not opened automatically.
+Near-source overlay is hidden while Game mode is enabled and capture results never route to it.
 
 ## Translation Flow
 
@@ -78,6 +102,8 @@ Renderer keeps using the existing preload IPC methods. Screen OCR, manual retran
 Main loads `ui-settings.json`, normalizes missing or invalid fields, preserves unknown legacy fields, and saves updates through a serialized write queue. The settings UI uses `ui-settings.json` as the source of truth. `localStorage` is only a local cache for renderer UI state.
 
 Hidden legacy Game OCR settings may remain in old JSON files, but they are not shown in the current settings interface.
+
+Near-source settings are `displayMode` (`panel` by default or `near-source`), placement, vertical offset, font size, background opacity, maximum width, and maximum lines. Invalid saved values are normalized while unrelated legacy JSON fields are preserved.
 
 ## Dictionary Flow
 
@@ -135,6 +161,11 @@ Renderer to main through `ipcRenderer.invoke()`:
 - `set-game-hotkey`
 - `get-game-settings`
 - `set-game-setting`
+- `show-near-source-overlay`
+- `hide-near-source-overlay`
+- `clear-near-source-overlay`
+- `update-near-source-settings`
+- `near-source-overlay-measured`
 
 Main to renderer through `webContents.send()`:
 
@@ -148,5 +179,7 @@ Main to renderer through `webContents.send()`:
 - `apply-ui-setting`
 - `apply-ui-settings`
 - `dictionary-changed`
+- `near-source-overlay-content`
+- `near-source-overlay-settings`
 
 There is no `ipcRenderer.send()` usage in the current source.

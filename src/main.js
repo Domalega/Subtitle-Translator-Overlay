@@ -7,6 +7,7 @@ const { PNG } = require('pngjs');
 const { cleanScreenOcrText } = require('./text-utils');
 const { TranslationService } = require('./translation-service');
 const { DEFAULT_UI_SETTINGS, normalizeUiSettings } = require('./settings-store');
+const { calculateNearSourceBounds } = require('./near-source-position');
 
 app.disableHardwareAcceleration();
 const singleInstanceLock = app.requestSingleInstanceLock();
@@ -17,9 +18,13 @@ let settingsWindow;
 let dictionaryWindow;
 let captureWindow;
 let translateWindow;
+let nearSourceWindow;
 let ocrWorkerPromise;
 let gameOcrWorkerPromise;
 let ocrArea = null;
+let ocrAnchorBoundsDip = null;
+let nearSourceContent = null;
+let nearSourceSettings = normalizeUiSettings(DEFAULT_UI_SETTINGS);
 let gameOcrBusy = false;
 let gameModeEnabled = false;
 const gameTranslationCache = new Map();
@@ -244,6 +249,86 @@ function createTranslateWindow() {
   return translateWindow;
 }
 
+function sendNearSourceState() {
+  if (!nearSourceWindow || nearSourceWindow.isDestroyed()) return;
+  nearSourceWindow.webContents.send('near-source-overlay-settings', nearSourceSettings);
+  if (nearSourceContent) nearSourceWindow.webContents.send('near-source-overlay-content', nearSourceContent);
+}
+
+function createNearSourceWindow() {
+  if (nearSourceWindow && !nearSourceWindow.isDestroyed()) return nearSourceWindow;
+  nearSourceWindow = new BrowserWindow({
+    width: 300,
+    height: 80,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    focusable: false,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  nearSourceWindow.setAlwaysOnTop(true, 'screen-saver');
+  nearSourceWindow.setIgnoreMouseEvents(true);
+  nearSourceWindow.loadFile(path.join(__dirname, 'near-source-overlay.html'));
+  nearSourceWindow.webContents.once('did-finish-load', sendNearSourceState);
+  nearSourceWindow.on('closed', () => { nearSourceWindow = null; });
+  return nearSourceWindow;
+}
+
+function hideNearSourceOverlay() {
+  if (nearSourceWindow && !nearSourceWindow.isDestroyed()) nearSourceWindow.hide();
+}
+
+function updateNearSourceSettings(settings) {
+  nearSourceSettings = normalizeUiSettings({ ...nearSourceSettings, ...settings });
+  if (nearSourceWindow && !nearSourceWindow.isDestroyed()) {
+    nearSourceWindow.webContents.send('near-source-overlay-settings', nearSourceSettings);
+  }
+}
+
+function isNearSourceEnabled() {
+  return nearSourceSettings.displayMode === 'near-source' && !gameModeEnabled;
+}
+
+function showNearSourceOverlay(payload) {
+  if (!isNearSourceEnabled() || !ocrAnchorBoundsDip || typeof payload?.text !== 'string' || !payload.text.trim()) return false;
+  nearSourceContent = { text: payload.text };
+  const window = createNearSourceWindow();
+  window.webContents.send('near-source-overlay-content', nearSourceContent);
+  return true;
+}
+
+function placeNearSourceOverlay(size) {
+  if (!isNearSourceEnabled() || !nearSourceContent || !ocrAnchorBoundsDip) return false;
+  const window = createNearSourceWindow();
+  const display = screen.getDisplayMatching(ocrAnchorBoundsDip);
+  const maxWidth = Math.min(nearSourceSettings.nearSourceMaxWidth, display.workArea.width);
+  const overlaySize = {
+    width: Math.max(240, Math.min(maxWidth, Math.round(Number(size?.width) || maxWidth))),
+    height: Math.max(40, Math.min(300, Math.round(Number(size?.height) || 80)))
+  };
+  const bounds = calculateNearSourceBounds({
+    anchorBounds: ocrAnchorBoundsDip,
+    overlaySize,
+    workArea: display.workArea,
+    placement: nearSourceSettings.nearSourcePlacement,
+    verticalOffset: nearSourceSettings.nearSourceVerticalOffset
+  });
+  window.setBounds(bounds);
+  if (!window.isVisible()) window.showInactive();
+  return true;
+}
+
 async function runCaptureTranslate(area) {
   if (gameOcrBusy) return;
   gameOcrBusy = true;
@@ -365,6 +450,8 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   mainWindow.on('closed', () => {
+    if (nearSourceWindow && !nearSourceWindow.isDestroyed()) nearSourceWindow.close();
+    nearSourceWindow = null;
     mainWindow = null;
     globalShortcut.unregisterAll();
     if (ocrWorkerPromise) {
@@ -394,6 +481,7 @@ function createWindow() {
   });
 
   const uiSettings = loadUiSettings();
+  updateNearSourceSettings(uiSettings);
   registerGameHotkey(uiSettings.hotkey || 'CommandOrControl+Shift+T');
 }
 
@@ -506,10 +594,14 @@ ipcMain.handle('close-current-window', (event) => {
 ipcMain.handle('set-ui-setting', async (_event, key, value) => {
   const settings = loadUiSettings();
   settings[key] = value;
-  await saveUiSettings(settings);
-  mainWindow?.webContents.send('apply-ui-setting', { key, value });
-  settingsWindow?.webContents.send('apply-ui-setting', { key, value });
-  dictionaryWindow?.webContents.send('apply-ui-setting', { key, value });
+  const normalized = normalizeUiSettings(settings);
+  await saveUiSettings(normalized);
+  updateNearSourceSettings(normalized);
+  if (normalized.displayMode !== 'near-source') hideNearSourceOverlay();
+  const appliedValue = normalized[key];
+  mainWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
+  settingsWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
+  dictionaryWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
   return true;
 });
 
@@ -528,6 +620,7 @@ ipcMain.handle('select-ocr-area', () => {
 });
 
 ipcMain.handle('complete-ocr-area', (_event, area) => {
+  if (!area || ![area.x, area.y, area.width, area.height].every(Number.isFinite)) return null;
   const display = screen.getPrimaryDisplay();
   const scale = display.scaleFactor || 1;
   ocrArea = {
@@ -535,6 +628,12 @@ ipcMain.handle('complete-ocr-area', (_event, area) => {
     y: area.y * scale,
     width: area.width * scale,
     height: area.height * scale
+  };
+  ocrAnchorBoundsDip = {
+    x: display.bounds.x + area.x,
+    y: display.bounds.y + area.y,
+    width: area.width,
+    height: area.height
   };
 
   selectionWindow?.close();
@@ -781,8 +880,23 @@ ipcMain.handle('set-game-setting', async (_event, key, value) => {
 
 ipcMain.handle('set-game-mode-enabled', (_event, enabled) => {
   gameModeEnabled = enabled;
+  if (gameModeEnabled) hideNearSourceOverlay();
   return true;
 });
+
+ipcMain.handle('show-near-source-overlay', (_event, payload) => showNearSourceOverlay(payload));
+ipcMain.handle('hide-near-source-overlay', () => { hideNearSourceOverlay(); return true; });
+ipcMain.handle('clear-near-source-overlay', () => {
+  nearSourceContent = null;
+  hideNearSourceOverlay();
+  return true;
+});
+ipcMain.handle('update-near-source-settings', (_event, settings) => {
+  if (!settings || typeof settings !== 'object') return false;
+  updateNearSourceSettings(settings);
+  return true;
+});
+ipcMain.handle('near-source-overlay-measured', (_event, size) => placeNearSourceOverlay(size));
 
 let currentGameHotkey = 'CommandOrControl+Shift+T';
 function registerGameHotkey(accelerator) {

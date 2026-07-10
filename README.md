@@ -1,6 +1,6 @@
 # Subtitle Translator Overlay
 
-Electron desktop overlay for reading English text from a selected screen area with OCR and showing a Russian translation in the main overlay window.
+Electron desktop overlay for reading English text from a selected screen area with OCR and showing a Russian translation.
 
 ## Features
 
@@ -10,6 +10,12 @@ Electron desktop overlay for reading English text from a selected screen area wi
 - Use `Start` / `Stop` to scan the selected area continuously once per second.
 - Shows recognized English text in the left column and Russian translation in the right column.
 - OCR translation results are cached locally in the renderer to reduce repeated translation requests.
+
+### Display Modes
+- `Main panel` is the default mode and shows original and translation in the application window.
+- `Near original subtitles` is optional and shows only the translation next to the selected original subtitle area.
+- Select an OCR area before using near-source mode. Auto prefers below the original subtitles and falls back above; Below and Above can be selected explicitly.
+- The near-source overlay is transparent, does not capture mouse input, and is intended for the primary monitor.
 
 ### Editing And Translation
 - In `Game mode`, the recognized original text can be edited in the main window.
@@ -32,6 +38,7 @@ Electron desktop overlay for reading English text from a selected screen area wi
 - Enable `Game mode` in the main window.
 - Press the configured hotkey, `Ctrl+Shift+T` by default, to select a screen area and translate it.
 - Game mode results are shown in the main overlay window.
+- Game mode does not use the near-source overlay.
 - The Game mode hotkey can be changed in `Settings`.
 
 ### Hotkeys
@@ -62,6 +69,11 @@ For a portable Windows executable, run `npm run build`. The output is written to
 2. Click `Select OCR area` and drag over the original English subtitle/text area.
 3. Click `Read once` for a single OCR pass, or `Start` for continuous scanning.
 4. Click `Stop` to stop continuous scanning.
+
+### Near Original Subtitles
+1. Select the OCR area in `Settings`.
+2. In `Settings`, select `Near original subtitles` under `Display mode`.
+3. Start Screen OCR. A successful translation appears beside the original subtitle without taking mouse input.
 
 ### Game Mode Capture
 1. Enable `Game mode` in the main window.

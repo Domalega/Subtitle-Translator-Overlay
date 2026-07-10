@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('overlayApi', {
   setGameHotkey: (accelerator) => ipcRenderer.invoke('set-game-hotkey', accelerator),
   getGameSettings: () => ipcRenderer.invoke('get-game-settings'),
   setGameSetting: (key, value) => ipcRenderer.invoke('set-game-setting', key, value),
+  showNearSourceOverlay: (payload) => ipcRenderer.invoke('show-near-source-overlay', payload),
+  hideNearSourceOverlay: () => ipcRenderer.invoke('hide-near-source-overlay'),
+  clearNearSourceOverlay: () => ipcRenderer.invoke('clear-near-source-overlay'),
+  updateNearSourceSettings: (settings) => ipcRenderer.invoke('update-near-source-settings', settings),
+  nearSourceOverlayMeasured: (size) => ipcRenderer.invoke('near-source-overlay-measured', size),
   onCaptureResult: (callback) => {
     ipcRenderer.on('capture-result', (_event, data) => callback(data));
   },
@@ -63,5 +68,11 @@ contextBridge.exposeInMainWorld('overlayApi', {
   },
   onDictionaryChanged: (callback) => {
     ipcRenderer.on('dictionary-changed', callback);
+  },
+  onNearSourceOverlayContent: (callback) => {
+    ipcRenderer.on('near-source-overlay-content', (_event, payload) => callback(payload));
+  },
+  onNearSourceOverlaySettings: (callback) => {
+    ipcRenderer.on('near-source-overlay-settings', (_event, settings) => callback(settings));
   }
 });

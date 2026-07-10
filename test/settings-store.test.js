@@ -28,3 +28,15 @@ test('normalizeUiSettings replaces invalid contextCount type', () => {
   const settings = normalizeUiSettings({ contextCount: 'many' });
   assert.equal(settings.contextCount, DEFAULT_UI_SETTINGS.contextCount);
 });
+
+test('normalizeUiSettings adds and validates near-source settings', () => {
+  const settings = normalizeUiSettings({ displayMode: 'unknown', nearSourcePlacement: 'side', nearSourceBackgroundOpacity: 3, nearSourceFontSize: 2, nearSourceMaxWidth: 9999, nearSourceMaxLines: 0, nearSourceVerticalOffset: -2 });
+  assert.equal(settings.displayMode, 'panel');
+  assert.equal(settings.nearSourcePlacement, 'auto');
+  assert.equal(settings.nearSourceBackgroundOpacity, 1);
+  assert.equal(settings.nearSourceFontSize, 12);
+  assert.equal(settings.nearSourceMaxWidth, 1400);
+  assert.equal(settings.nearSourceMaxLines, 1);
+  assert.equal(settings.nearSourceVerticalOffset, 0);
+  assert.equal(normalizeUiSettings({}).displayMode, 'panel');
+});

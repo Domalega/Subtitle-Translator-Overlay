@@ -18,7 +18,8 @@
     nearSourceFontSize: 24,
     nearSourceBackgroundOpacity: 0.70,
     nearSourceMaxWidth: 900,
-    nearSourceMaxLines: 3
+    nearSourceMaxLines: 3,
+    developerMode: false
   });
 
   const THEMES = new Set(['green', 'blue', 'purple', 'dark', 'nothing', 'nothing-dark', 'nothing-os-light', 'nothing-os-dark']);
@@ -58,6 +59,7 @@
       : DEFAULT_UI_SETTINGS.nearSourceBackgroundOpacity;
     merged.nearSourceMaxWidth = clampNumber(source.nearSourceMaxWidth, DEFAULT_UI_SETTINGS.nearSourceMaxWidth, 240, 1400);
     merged.nearSourceMaxLines = clampNumber(source.nearSourceMaxLines, DEFAULT_UI_SETTINGS.nearSourceMaxLines, 1, 6);
+    merged.developerMode = source.developerMode === true;
 
     return merged;
   }

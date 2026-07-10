@@ -244,6 +244,7 @@ settingsToggleButton.addEventListener('click', () => window.overlayApi.openSetti
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
   if (key === 'displayMode') outputRouter.setDisplayMode(value);
+  if (key === 'developerMode') developerModeEnabled = value === true;
   if (key.startsWith('nearSource')) nearSourceOutput.setSettings({ [key]: value });
   if (key === 'fontScale') {
     document.documentElement.style.setProperty('--font-scale', `${Number(value) / 100}`);
@@ -262,6 +263,7 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
 window.overlayApi.onApplyUiSettings((settings) => {
   outputRouter.setDisplayMode(settings.displayMode);
+  developerModeEnabled = settings.developerMode === true;
   nearSourceOutput.setSettings(settings);
   if (settings.fontScale) document.documentElement.style.setProperty('--font-scale', `${Number(settings.fontScale) / 100}`);
   if (settings.theme) { panel.dataset.theme = settings.theme; localStorage.setItem('subtitle-overlay-theme', settings.theme); }
@@ -301,6 +303,7 @@ async function loadInitSettings() {
       window.overlayApi.setWindowSize(Number(s.windowWidth), Number(s.windowHeight));
     }
     outputRouter.setDisplayMode(s.displayMode);
+    developerModeEnabled = s.developerMode === true;
     nearSourceOutput.setSettings(s);
   } catch (_) {}
 }
@@ -373,14 +376,18 @@ window.overlayApi.onWindowRestored(() => {
 window.overlayApi.onStopOcr(() => stopOcr('Screen OCR stopped by Ctrl+Shift+S'));
 
 let activeOcrProgressRequest = null;
+let developerModeEnabled = false;
 window.overlayApi.onOcrProgress((event) => {
   if (typeof event === 'number') { if (isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${event}%`; return; }
   if (event?.type === 'started') activeOcrProgressRequest = `${event.generation}:${event.requestId}`;
-  if (event?.type === 'progress' && activeOcrProgressRequest === `${event.generation}:${event.requestId}` && isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${event.progress}%`;
+  if (event?.type === 'progress' && activeOcrProgressRequest === `${event.generation}:${event.requestId}` && isOcrRunning) statusElement.textContent = developerModeEnabled ? `OCR: recognizing ${event.progress}%` : `Screen OCR: recognizing ${event.progress}%`;
   if (event?.type === 'reset' && activeOcrProgressRequest === `${event.generation}:${event.requestId}`) {
     activeOcrProgressRequest = null;
     if (isOcrRunning) statusElement.textContent = 'Screen OCR: running';
   }
+});
+window.overlayApi.onDeveloperStatus((event) => {
+  if (developerModeEnabled && typeof event?.stage === 'string') statusElement.textContent = event.stage;
 });
 
 window.overlayApi.onOcrAreaChanged((area) => {

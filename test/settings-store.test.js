@@ -44,3 +44,9 @@ test('normalizeUiSettings adds and validates near-source settings', () => {
 test('normalizeUiSettings migrates near-source display mode to both', () => {
   assert.equal(normalizeUiSettings({ displayMode: 'near-source' }).displayMode, 'both');
 });
+
+test('Developer mode defaults off, persists true, and old settings remain compatible', () => {
+  assert.equal(normalizeUiSettings({}).developerMode, false);
+  assert.equal(normalizeUiSettings({ developerMode: true }).developerMode, true);
+  assert.equal(normalizeUiSettings({ theme: 'blue' }).developerMode, false);
+});

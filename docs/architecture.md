@@ -13,6 +13,7 @@ Main windows currently loaded by `BrowserWindow.loadFile()` are:
 - `capture-select.html`: Game mode capture selection window.
 - `translate-window.html`: legacy translation window, kept for a later architecture pass.
 - `near-source-overlay.html`: independent transparent translation-only window.
+- `developer-ocr-zone.html`: transparent, mouse-pass-through diagnostic border outside the saved OCR crop.
 
 The main process keeps `contextIsolation` enabled and `nodeIntegration` disabled for renderer windows.
 
@@ -79,6 +80,10 @@ The overlay renderer uses `textContent`, measures its card on `requestAnimationF
 
 Game mode still outputs to the main overlay. The legacy `translate-window` is not opened automatically.
 Near-source overlay is hidden while Game mode is enabled and capture results never route to it.
+
+## Developer Diagnostics
+
+`developerMode` is a persisted UI setting, disabled by default. Main owns one transparent OCR-zone window which is taskbar-free, non-focusable and ignores mouse input. Its border is positioned outside `ocrAnchorBoundsDip`, so it is not part of the OCR crop; its theme color is updated with the UI theme. Main sends compact `developer-status` stage events and request-scoped OCR progress through preload. The renderer displays only the latest diagnostic stage while Developer mode is enabled.
 
 ## Translation Flow
 

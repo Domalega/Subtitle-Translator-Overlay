@@ -21,6 +21,7 @@ const nearSourceFontSize = document.getElementById('nearSourceFontSize');
 const nearSourceBackgroundOpacity = document.getElementById('nearSourceBackgroundOpacity');
 const nearSourceMaxWidth = document.getElementById('nearSourceMaxWidth');
 const nearSourceMaxLines = document.getElementById('nearSourceMaxLines');
+const developerModeToggle = document.getElementById('developerModeToggle');
 
 let uiSettingSaveQueue = Promise.resolve();
 
@@ -83,6 +84,7 @@ gameHotkey.addEventListener('change', async () => {
   }
 });
 deleteConfirmToggle.addEventListener('change', () => setUiSettingQueued('deleteConfirm', deleteConfirmToggle.checked));
+developerModeToggle.addEventListener('change', () => setUiSettingQueued('developerMode', developerModeToggle.checked));
 contextCountSelect.addEventListener('change', () => setUiSettingQueued('contextCount', Number(contextCountSelect.value)));
 displayMode.addEventListener('change', () => {
   updateNearSourceVisibility();
@@ -114,6 +116,7 @@ async function loadUiSettings() {
     nearSourceBackgroundOpacity.value = Math.round((s.nearSourceBackgroundOpacity ?? 0.7) * 100);
     nearSourceMaxWidth.value = s.nearSourceMaxWidth ?? 900;
     nearSourceMaxLines.value = s.nearSourceMaxLines ?? 3;
+    developerModeToggle.checked = s.developerMode === true;
   } catch (_) {
     fontSelect.value = 'system';
     deleteConfirmToggle.checked = true;
@@ -139,7 +142,7 @@ resetButton.addEventListener('click', async () => {
     deleteConfirm: true,
     contextCount: 5,
     displayMode: 'panel', nearSourcePlacement: 'auto', nearSourceVerticalOffset: 10,
-    nearSourceFontSize: 24, nearSourceBackgroundOpacity: 0.7, nearSourceMaxWidth: 900, nearSourceMaxLines: 3
+    nearSourceFontSize: 24, nearSourceBackgroundOpacity: 0.7, nearSourceMaxWidth: 900, nearSourceMaxLines: 3, developerMode: false
   };
   fontSelect.value = defaults.font;
   fontScaleInput.value = defaults.fontScale;
@@ -157,6 +160,7 @@ resetButton.addEventListener('click', async () => {
   nearSourceBackgroundOpacity.value = defaults.nearSourceBackgroundOpacity * 100;
   nearSourceMaxWidth.value = defaults.nearSourceMaxWidth;
   nearSourceMaxLines.value = defaults.nearSourceMaxLines;
+  developerModeToggle.checked = defaults.developerMode;
   fontScaleValue.textContent = `${fontScaleInput.value}%`;
   windowWidthValue.textContent = `${windowWidthInput.value} px`;
   windowHeightValue.textContent = `${windowHeightInput.value} px`;
@@ -177,6 +181,7 @@ resetButton.addEventListener('click', async () => {
   await setUiSettingQueued('nearSourceBackgroundOpacity', defaults.nearSourceBackgroundOpacity);
   await setUiSettingQueued('nearSourceMaxWidth', defaults.nearSourceMaxWidth);
   await setUiSettingQueued('nearSourceMaxLines', defaults.nearSourceMaxLines);
+  await setUiSettingQueued('developerMode', defaults.developerMode);
   await window.overlayApi.setGameHotkey(defaults.hotkey);
   setStatus('Settings reset to defaults');
 });

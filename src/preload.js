@@ -89,5 +89,11 @@ contextBridge.exposeInMainWorld('overlayApi', {
   },
   onNearSourceOverlaySettings: (callback) => {
     ipcRenderer.on('near-source-overlay-settings', (_event, settings) => callback(settings));
+  },
+  onDeveloperOcrZoneTheme: (callback) => {
+    ipcRenderer.on('developer-ocr-zone-theme', (_event, color) => callback(color));
+  },
+  onDeveloperStatus: (callback) => {
+    ipcRenderer.on('developer-status', (_event, event) => callback(event));
   }
 });

@@ -33,6 +33,7 @@ Electron desktop overlay for reading English text from a selected screen area wi
 - `Confirm before deleting words` controls dictionary delete confirmation.
 - `Context examples count` controls how many context examples are requested.
 - `Focus mode` hides non-essential controls in the main overlay.
+- `Developer mode` shows the selected OCR area and the current OCR processing stage for diagnostics.
 
 ### Game Mode
 - Enable `Game mode` in the main window.

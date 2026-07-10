@@ -34,6 +34,7 @@ const exportJsonBtn = document.getElementById('exportJsonBtn');
 
 const ITEM_HEIGHT = 72;
 let page = 1;
+let pageSize = 1;
 let wordToDeleteId = null;
 let wordToDeleteElement = null;
 let studyWords = [];
@@ -41,10 +42,11 @@ let studyIndex = 0;
 let studyTranslationShown = false;
 let filteredEntries = [];
 let deleteConfirmEnabled = true;
+const { calculateDictionaryPageSize, createDictionaryPagination } = window.DictionaryPagination;
 
 function getPageSize() {
-  const available = dictionaryList.clientHeight;
-  return Math.max(1, Math.floor(available / ITEM_HEIGHT));
+  pageSize = calculateDictionaryPageSize(dictionaryList.clientHeight, ITEM_HEIGHT, pageSize);
+  return pageSize;
 }
 
 document.body.dataset.theme = 'green';
@@ -115,10 +117,9 @@ async function renderDictionary() {
   const query = dictionarySearch.value.trim();
   filteredEntries = filterEntries(allEntries, query);
 
-  const pageSize = getPageSize();
-  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
-  page = Math.min(page, totalPages);
-  const pageEntries = filteredEntries.slice((page - 1) * pageSize, page * pageSize);
+  const pagination = createDictionaryPagination(filteredEntries.length, getPageSize(), page);
+  page = pagination.page;
+  const pageEntries = filteredEntries.slice(pagination.start, pagination.end);
 
   dictionaryList.textContent = '';
 
@@ -203,9 +204,21 @@ async function renderDictionary() {
     dictionaryList.append(item);
   });
 
-  dictionaryPageInfo.textContent = `Page ${page} / ${totalPages}`;
+  dictionaryPageInfo.textContent = `Page ${page} / ${pagination.totalPages}`;
   dictionaryPrevButton.disabled = page <= 1;
-  dictionaryNextButton.disabled = page >= totalPages;
+  dictionaryNextButton.disabled = page >= pagination.totalPages;
+}
+
+let layoutRenderScheduled = false;
+function renderDictionaryAfterLayout() {
+  if (layoutRenderScheduled) return;
+  layoutRenderScheduled = true;
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      layoutRenderScheduled = false;
+      renderDictionary();
+    });
+  });
 }
 
 function hideModal(modalElement) {
@@ -250,7 +263,7 @@ confirmDeleteButton.addEventListener('click', async () => {
     wordToDeleteElement.style.transform = 'translateX(20px)';
     wordToDeleteElement.style.height = '0';
     wordToDeleteElement.style.overflow = 'hidden';
-    setTimeout(async () => {
+    window.setTimeout(async () => {
       await window.overlayApi.dictionaryDelete(wordToDeleteId);
       wordToDeleteId = null;
       wordToDeleteElement = null;
@@ -313,10 +326,24 @@ document.addEventListener('keydown', (event) => {
 
 window.overlayApi.onDictionaryChanged(renderDictionary);
 
+if ('ResizeObserver' in window) {
+  const resizeObserver = new ResizeObserver(() => renderDictionaryAfterLayout());
+  resizeObserver.observe(dictionaryList);
+}
+
+window.addEventListener('load', renderDictionaryAfterLayout);
+
+if (document.fonts?.ready) {
+  document.fonts.ready.then(renderDictionaryAfterLayout).catch(() => {});
+}
+
 let resizeDebounce;
 window.addEventListener('resize', () => {
-  clearTimeout(resizeDebounce);
-  resizeDebounce = setTimeout(() => renderDictionary(), 150);
+  window.clearTimeout(resizeDebounce);
+  resizeDebounce = window.setTimeout(renderDictionaryAfterLayout, 150);
 });
 
-loadUiSettings().then(renderDictionary);
+loadUiSettings().then(() => {
+  renderDictionary();
+  renderDictionaryAfterLayout();
+});

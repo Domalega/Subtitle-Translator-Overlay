@@ -13,8 +13,8 @@
       this.onRunningChange = options.onRunningChange || (() => {});
       this.getCachedTranslation = options.getCachedTranslation || (() => null);
       this.setCachedTranslation = options.setCachedTranslation || (() => {});
-      this.setTimeout = options.setTimeout || setTimeout;
-      this.clearTimeout = options.clearTimeout || clearTimeout;
+      this.setTimeout = options.setTimeout || ((callback, delay) => globalThis.setTimeout(callback, delay));
+      this.clearTimeout = options.clearTimeout || ((timerId) => globalThis.clearTimeout(timerId));
       this.ocrIntervalMs = options.ocrIntervalMs || 1000;
       this.candidateTimeoutMs = options.candidateTimeoutMs || 180;
       this.holdClearMs = options.holdClearMs || 2000;
@@ -49,7 +49,7 @@
       this.resetVolatileState();
       this.onRunningChange(true);
       this.output.setStatus('Screen OCR: scanning every 1 second');
-      this.read({ scheduleNext: true, generation: this.generation });
+      return this.read({ scheduleNext: true, generation: this.generation });
     }
 
     stop(message = 'Screen OCR stopped') {
@@ -61,7 +61,7 @@
     }
 
     readOnce() {
-      this.read({ scheduleNext: false, generation: this.generation });
+      return this.read({ scheduleNext: false, generation: this.generation });
     }
 
     async read({ scheduleNext, generation }) {

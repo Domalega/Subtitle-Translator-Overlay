@@ -9,7 +9,6 @@ const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
 const russianTextElement = document.getElementById('russianText');
 const panel = document.querySelector('.panel');
-const { normalizeOcrText, isSimilarText, isLikelySubtitle } = window.TextUtils;
 const { SubtitleStabilizer } = window.SubtitleStabilizerModule;
 const { MainPanelOutput } = window.MainPanelOutputModule;
 const { ScreenOcrCoordinator } = window.ScreenOcrCoordinatorModule;
@@ -21,26 +20,10 @@ let pausedAt = 0;
 let isRunning = false;
 let tickHandle = null;
 let isOcrRunning = false;
-let ocrTimer = null;
-let lastOcrText = '';
 let hasOcrArea = false;
-let isOcrBusy = false;
-let lastNormalizedOcrText = '';
-let lastGoodEnglish = '';
-let lastGoodRussian = '';
 let ocrTranslationCache = new Map();
 const OCR_CACHE_MAX = 500;
 let ocrCacheInsertOrder = [];
-let candidateTimer = null;
-let candidateText = '';
-let candidateNormalized = '';
-let emptyFrameCount = 0;
-let holdClearTimer = null;
-let translateBusy = false;
-let pendingTranslationKey = '';
-let pendingTranslationText = '';
-let activeTranslationKey = '';
-let latestRequestedTranslationKey = '';
 const CANDIDATE_TIMEOUT_MS = 180;
 const EMPTY_FRAME_THRESHOLD = 3;
 const HOLD_CLEAR_MS = 2000;
@@ -208,180 +191,6 @@ function setCachedTranslation(normalizedKey, translation) {
   try { localStorage.setItem('ocr-norm-' + normalizedKey, translation); } catch (_) {}
 }
 
-function scheduleTranslation(normalizedKey, displayText) {
-  latestRequestedTranslationKey = normalizedKey;
-  pendingTranslationKey = normalizedKey;
-  pendingTranslationText = displayText;
-  processNextTranslation();
-}
-
-async function processNextTranslation() {
-  if (translateBusy) return;
-
-  translateBusy = true;
-  try {
-    while (pendingTranslationKey) {
-      const key = pendingTranslationKey;
-      const text = pendingTranslationText;
-      pendingTranslationKey = '';
-      pendingTranslationText = '';
-      activeTranslationKey = key;
-
-      const cached = getCachedTranslation(key);
-      if (cached) {
-        if (key === latestRequestedTranslationKey) {
-          russianTextElement.textContent = cached;
-          lastGoodRussian = cached;
-          statusElement.textContent = 'Screen OCR: subtitle translated';
-        }
-        activeTranslationKey = '';
-        continue;
-      }
-
-      try {
-        const translation = await translate(text);
-        if (key !== latestRequestedTranslationKey) {
-          activeTranslationKey = '';
-          continue;
-        }
-        russianTextElement.textContent = translation;
-        lastGoodRussian = translation;
-        setCachedTranslation(key, translation);
-        statusElement.textContent = 'Screen OCR: subtitle translated';
-      } catch (_) {
-        if (key === latestRequestedTranslationKey) {
-          statusElement.textContent = 'Translation failed';
-        }
-      }
-
-      activeTranslationKey = '';
-    }
-  } finally {
-    translateBusy = false;
-  }
-}
-
-async function readOcrSubtitle({ scheduleNext = true } = {}) {
-  if (isOcrBusy) {
-    statusElement.textContent = 'OCR is already reading. Wait a moment.';
-    return;
-  }
-
-  if (!hasOcrArea) {
-    statusElement.textContent = 'Select OCR area first';
-    if (isOcrRunning) setOcrRunning(false);
-    return;
-  }
-
-  isOcrBusy = true;
-  statusElement.textContent = 'Reading subtitle...';
-
-  try {
-    const text = await window.overlayApi.readScreenSubtitle();
-
-    if (!isLikelySubtitle(text)) {
-      emptyFrameCount++;
-      if (emptyFrameCount >= EMPTY_FRAME_THRESHOLD && !holdClearTimer) {
-        holdClearTimer = window.setTimeout(() => {
-          englishTextElement.textContent = '';
-          russianTextElement.textContent = '';
-          lastNormalizedOcrText = '';
-          lastGoodEnglish = '';
-          lastGoodRussian = '';
-          candidateText = '';
-          candidateNormalized = '';
-          holdClearTimer = null;
-        }, HOLD_CLEAR_MS);
-      }
-      statusElement.textContent = text ? `Ignored OCR noise: ${text.slice(0, 40)}` : 'No subtitle detected in selected area';
-      return;
-    }
-
-    emptyFrameCount = 0;
-    window.clearTimeout(holdClearTimer);
-    holdClearTimer = null;
-
-    const normalized = normalizeOcrText(text);
-
-    if (normalized === lastNormalizedOcrText) {
-      statusElement.textContent = 'Same subtitle, already translated';
-      return;
-    }
-
-    if (isSimilarText(normalized, lastNormalizedOcrText)) {
-      statusElement.textContent = 'Similar subtitle, reusing previous translation';
-      return;
-    }
-
-    const base = candidateNormalized || lastNormalizedOcrText;
-    const isGrowing = base && (normalized.startsWith(base) || base.startsWith(normalized));
-
-    candidateText = text;
-    candidateNormalized = normalized;
-
-    englishTextElement.textContent = text;
-    if (!russianTextElement.textContent || russianTextElement.textContent === 'Translation will appear here') {
-      russianTextElement.textContent = 'Translating...';
-    }
-
-    window.clearTimeout(candidateTimer);
-    candidateTimer = window.setTimeout(() => {
-      lastNormalizedOcrText = candidateNormalized;
-      lastGoodEnglish = candidateText;
-      scheduleTranslation(candidateNormalized, candidateText);
-      statusElement.textContent = 'Screen OCR: subtitle queued for translation';
-    }, CANDIDATE_TIMEOUT_MS);
-
-    statusElement.textContent = isGrowing ? 'Screen OCR: subtitle growing, waiting...' : 'Screen OCR: subtitle detected, translating...';
-  } catch (error) {
-    statusElement.textContent = `Screen OCR error: ${error.message}`;
-  } finally {
-    isOcrBusy = false;
-    if (scheduleNext && isOcrRunning) {
-      ocrTimer = window.setTimeout(readOcrSubtitle, ocrIntervalMs);
-    }
-  }
-}
-
-function setOcrRunning(nextRunning) {
-  isOcrRunning = nextRunning;
-  playPauseButton.textContent = isOcrRunning || isRunning ? 'Stop' : 'Start';
-
-  if (isOcrRunning) {
-    setRunning(false);
-    currentIndex = -1;
-    lastNormalizedOcrText = '';
-    candidateTimer = null;
-    candidateText = '';
-    candidateNormalized = '';
-    emptyFrameCount = 0;
-    holdClearTimer = null;
-    translateBusy = false;
-    pendingTranslationKey = '';
-    pendingTranslationText = '';
-    activeTranslationKey = '';
-    latestRequestedTranslationKey = '';
-    ocrTranslationCache = new Map();
-    statusElement.textContent = 'Screen OCR: scanning every 1 second';
-    readOcrSubtitle();
-  } else {
-    window.clearTimeout(ocrTimer);
-    window.clearTimeout(candidateTimer);
-    window.clearTimeout(holdClearTimer);
-    candidateTimer = null;
-    candidateText = '';
-    candidateNormalized = '';
-    emptyFrameCount = 0;
-    holdClearTimer = null;
-    translateBusy = false;
-    pendingTranslationKey = '';
-    pendingTranslationText = '';
-    activeTranslationKey = '';
-    latestRequestedTranslationKey = '';
-    statusElement.textContent = '';
-  }
-}
-
 function stopOcr(message = 'Screen OCR stopped') {
   screenOcrCoordinator.stop(message);
 }
@@ -405,6 +214,8 @@ const screenOcrCoordinator = new ScreenOcrCoordinator({
   },
   getCachedTranslation,
   setCachedTranslation,
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: (timerId) => window.clearTimeout(timerId),
   ocrIntervalMs,
   candidateTimeoutMs: CANDIDATE_TIMEOUT_MS,
   holdClearMs: HOLD_CLEAR_MS

@@ -1,0 +1,30 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { DEFAULT_UI_SETTINGS, normalizeUiSettings } = require('../src/settings-store');
+
+test('normalizeUiSettings merges old settings with defaults', () => {
+  const settings = normalizeUiSettings({ theme: 'dark' });
+  assert.equal(settings.theme, 'dark');
+  assert.equal(settings.font, DEFAULT_UI_SETTINGS.font);
+  assert.equal(settings.contextCount, DEFAULT_UI_SETTINGS.contextCount);
+});
+
+test('normalizeUiSettings keeps unknown fields', () => {
+  const settings = normalizeUiSettings({ legacyGameField: 'keep' });
+  assert.equal(settings.legacyGameField, 'keep');
+});
+
+test('normalizeUiSettings replaces invalid fontScale', () => {
+  const settings = normalizeUiSettings({ fontScale: 'big' });
+  assert.equal(settings.fontScale, DEFAULT_UI_SETTINGS.fontScale);
+});
+
+test('normalizeUiSettings clamps invalid windowWidth range', () => {
+  const settings = normalizeUiSettings({ windowWidth: 10 });
+  assert.equal(settings.windowWidth, 620);
+});
+
+test('normalizeUiSettings replaces invalid contextCount type', () => {
+  const settings = normalizeUiSettings({ contextCount: 'many' });
+  assert.equal(settings.contextCount, DEFAULT_UI_SETTINGS.contextCount);
+});

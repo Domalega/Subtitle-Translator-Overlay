@@ -1,71 +1,87 @@
 # Subtitle Translator Overlay
 
-An Electron desktop overlay application that provides two primary modes for language learning and subtitle translation: a **Subtitle Mode** for movie/series subtitles and a **Screen Translation Mode** for in-game or general screen text.
+Electron desktop overlay for reading English text from a selected screen area with OCR and showing a Russian translation in the main overlay window.
 
 ## Features
 
-### General
--   **Transparent Overlay**: Always-on-top window for seamless integration.
--   **Modern UI/UX**: Unified design, reduced transparency, backdrop blur effects, and smooth animations.
--   **Dictionary**: Add words from subtitles/screen to a personal dictionary.
-    -   Word deletion, search, study mode (flashcards), and export (CSV/JSON).
+### Screen OCR
+- Select an OCR area from `Settings` with `Select OCR area`.
+- Use `Read once` to read the selected area one time.
+- Use `Start` / `Stop` to scan the selected area continuously once per second.
+- Shows recognized English text in the left column and Russian translation in the right column.
+- OCR translation results are cached locally in the renderer to reduce repeated translation requests.
 
-### Subtitle Mode (for movies/series)
--   Loads English `.srt` files and displays Russian translations.
--   Screen OCR option for reading English subtitles directly from the screen without an `.srt` file.
-    -   Select OCR area for precise text capture.
--   Adjust subtitle offset for synchronization.
+### Editing And Translation
+- In `Game mode`, the recognized original text can be edited in the main window.
+- Use `Retranslate edited` to translate the edited text again.
+- Translation uses the Google Translate endpoint used by the application code.
 
-### Screen Translation Mode (for games/general screen text)
--   **Hotkey-triggered Capture**: Press `Ctrl+Shift+T` (customizable hotkey) to capture a selected screen area.
--   **OCR & Translate**: Performs OCR on the selected area, groups text into logical blocks, and translates the entire block.
--   **Translation Window**: Displays original English text, Russian translation, and a list of recognized words for easy dictionary addition.
-    -   Editable original text with a "Retranslate" option.
-    -   Copy original/translation to clipboard.
--   **Experimental Live Scan**: An optional, experimental live OCR mode (off by default) can continuously scan and translate the screen.
+### Dictionary
+- Select a word in the overlay and press `Add word` to add it to the personal dictionary.
+- Open the dictionary with `Dictionary`.
+- Dictionary supports search, sorting, pagination, word deletion, context examples, and export to CSV or JSON.
+- `Study` opens the available flashcard-style study mode.
 
-### Settings
--   **Appearance**: Customize `Theme`, `Font`, and `Text Size`.
--   **Overlay Size**: Adjust `Window Width` and `Window Height`.
--   **Game OCR**: Configure `Mode` (Hotkey only / Live scan), `Live scan interval`, `Hotkey` for capture, `Overlay width`, `Overlay font size`, and `Overlay opacity`.
--   **Dictionary**: `Confirm before deleting words` toggle.
--   **Context**: `Context examples count` (1-10).
--   **Persistence**: All settings are saved and persist across restarts.
--   **Reset to Defaults**: Button to restore all settings.
+### Appearance And UI
+- `Settings` supports theme, font, text scale, main window width, and main window height.
+- `Confirm before deleting words` controls dictionary delete confirmation.
+- `Context examples count` controls how many context examples are requested.
+- `Focus mode` hides non-essential controls in the main overlay.
+
+### Game Mode
+- Enable `Game mode` in the main window.
+- Press the configured hotkey, `Ctrl+Shift+T` by default, to select a screen area and translate it.
+- Game mode results are shown in the main overlay window.
+- The Game mode hotkey can be changed in `Settings`.
 
 ### Hotkeys
--   `Ctrl+Shift+O`: Restore main window.
--   `Ctrl+Shift+S`: Stop OCR (in Subtitle Mode).
--   `Ctrl+Shift+T` (default): Trigger screen capture and translation (customizable in settings).
+- `Ctrl+Shift+O`: restore the main window.
+- `Ctrl+Shift+S`: stop continuous Screen OCR.
+- `Ctrl+Shift+T`: default Game mode capture hotkey, configurable in `Settings`.
 
 ## Installation
 
-1.  **Clone the repository**: `git clone https://github.com/Domalega/Subtitle-Translator-Overlay.git`
-2.  **Navigate to the project directory**: `cd Subtitle-Translator-Overlay`
-3.  **Install dependencies**: `npm install`
-4.  **Run the application**: `npm start`
+1. Clone the repository: `git clone https://github.com/Domalega/Subtitle-Translator-Overlay.git`
+2. Navigate to the project directory: `cd Subtitle-Translator-Overlay`
+3. Install dependencies: `npm install`
+4. Run the application: `npm start`
 
-For a portable Windows `.exe`, run `npm run build`. The executable will be in the `dist/` folder.
+For a portable Windows executable, run `npm run build`. The output is written to `dist/`.
+
+## Development Commands
+
+- `npm start`: run the Electron app.
+- `npm run check:files`: verify local Electron, HTML script, stylesheet, and package entry file references.
+- `npm run build`: build a portable Windows package.
+- `npm run dist`: build the configured Windows distribution target.
 
 ## Usage
 
-### Subtitle Mode
-1.  Open your video player and enable English subtitles.
-2.  In the app, click `Open SRT` and select your English `.srt` file.
-3.  Start your video and click `Start` in the app when subtitles begin.
-4.  Use the `Offset` field or `-5s`, `+5s` buttons to synchronize.
+### Continuous Screen OCR
+1. Open `Settings`.
+2. Click `Select OCR area` and drag over the original English subtitle/text area.
+3. Click `Read once` for a single OCR pass, or `Start` for continuous scanning.
+4. Click `Stop` to stop continuous scanning.
 
-### Screen Translation Mode
-1.  Enable "Game mode" in the main window.
-2.  Press `Ctrl+Shift+T` (or your custom hotkey).
-3.  Drag to select the area on the screen you want to translate.
-4.  A translation window will appear with the captured text and its translation.
+### Game Mode Capture
+1. Enable `Game mode` in the main window.
+2. Press `Ctrl+Shift+T` or your configured hotkey.
+3. Drag to select the screen area to translate.
+4. The recognized original and translation appear in the main overlay window.
 
-**Note**: OCR relies on visual filtering. Ensure the selected area is clear for optimal results.
+### Dictionary
+1. Select a word in the recognized or translated text.
+2. Click `Add word`.
+3. Open `Dictionary` to search, sort, page through entries, export them, or use `Study`.
 
-## Limitations
-- Only primary display is currently supported for screen capture.
-- Live scan is experimental and may impact performance.
+## Known Limitations
+
+- OCR works only after an OCR area has been selected.
+- The current version is oriented around the primary monitor.
+- OCR quality depends on subtitle/text size, color, contrast, and background.
+- Game mode currently works through the configured hotkey.
+- Live Scan for Game OCR is not currently available in the UI.
+- SRT loading exists in code but is not available from the current interface.
 
 ## Development
 

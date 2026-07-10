@@ -9,6 +9,10 @@ const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
 const russianTextElement = document.getElementById('russianText');
 const panel = document.querySelector('.panel');
+const { normalizeOcrText, isSimilarText, isLikelySubtitle } = window.TextUtils;
+const { SubtitleStabilizer } = window.SubtitleStabilizerModule;
+const { MainPanelOutput } = window.MainPanelOutputModule;
+const { ScreenOcrCoordinator } = window.ScreenOcrCoordinatorModule;
 
 let cues = [];
 let currentIndex = -1;
@@ -78,13 +82,13 @@ function findCueIndex(time) {
   return cues.findIndex((cue) => time >= cue.start && time <= cue.end);
 }
 
-async function translate(text) {
+async function translate(text, options = {}) {
   const cacheKey = cachePrefix + text;
-  const cached = localStorage.getItem(cacheKey);
+  const cached = options.scope ? null : localStorage.getItem(cacheKey);
   if (cached) return cached;
 
-  const translated = await window.overlayApi.translate(text);
-  localStorage.setItem(cacheKey, translated);
+  const translated = await window.overlayApi.translate(text, options.scope);
+  if (!options.scope) localStorage.setItem(cacheKey, translated);
   return translated;
 }
 
@@ -175,44 +179,6 @@ function setRunning(nextRunning) {
     pausedAt = mediaTime();
     window.cancelAnimationFrame(tickHandle);
   }
-}
-
-function isLikelySubtitle(text) {
-  if (!text || text.length < 3 || text.length > 180) return false;
-  if (!/[a-zA-Z]/.test(text)) return false;
-  if (/[&=:%]{2,}/.test(text)) return false;
-  if ((text.match(/[A-Za-z]/g) || []).length < text.length * 0.45) return false;
-  if (/\b(?:Tosapminzam|zay2o0e|FBRo|Screen OCR|Click-through)\b/i.test(text)) return false;
-  return !/^\d{1,2}:\d{2}/.test(text);
-}
-
-function normalizeOcrText(text) {
-  return text
-    .replace(/[\r\n]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^\s*[\-–—]\s*/, '')
-    .trim()
-    .toLowerCase();
-}
-
-function isSimilarText(a, b) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen < 20) return false;
-  const minLen = Math.min(a.length, b.length);
-  if (minLen / maxLen < 0.55) return false;
-  const wordsA = a.split(/\s+/);
-  const wordsB = b.split(/\s+/);
-  const setA = new Set(wordsA);
-  const setB = new Set(wordsB);
-  let intersection = 0;
-  for (const w of setA) {
-    if (setB.has(w)) intersection++;
-  }
-  const union = setA.size + setB.size - intersection;
-  if (union === 0) return false;
-  return (intersection / union) >= 0.75;
 }
 
 function getCachedTranslation(normalizedKey) {
@@ -417,28 +383,38 @@ function setOcrRunning(nextRunning) {
 }
 
 function stopOcr(message = 'Screen OCR stopped') {
-  isOcrRunning = false;
-  window.clearTimeout(ocrTimer);
-  window.clearTimeout(candidateTimer);
-  window.clearTimeout(holdClearTimer);
-  candidateTimer = null;
-  candidateText = '';
-  candidateNormalized = '';
-  emptyFrameCount = 0;
-  holdClearTimer = null;
-  translateBusy = false;
-  pendingTranslationKey = '';
-  pendingTranslationText = '';
-  activeTranslationKey = '';
-  latestRequestedTranslationKey = '';
-  playPauseButton.textContent = isRunning ? 'Pause' : 'Start';
-  statusElement.textContent = message;
+  screenOcrCoordinator.stop(message);
 }
 
-playPauseButton.addEventListener('click', () => {
-  setOcrRunning(!isOcrRunning);
+const mainPanelOutput = new MainPanelOutput({
+  englishTextElement,
+  russianTextElement,
+  statusElement
 });
-ocrOnceButton.addEventListener('click', () => readOcrSubtitle({ scheduleNext: false }));
+
+const screenOcrCoordinator = new ScreenOcrCoordinator({
+  output: mainPanelOutput,
+  stabilizer: new SubtitleStabilizer({ emptyFrameThreshold: EMPTY_FRAME_THRESHOLD }),
+  readOcr: () => window.overlayApi.readScreenSubtitle(),
+  translate: (text, options) => translate(text, options),
+  hasOcrArea: () => hasOcrArea,
+  onRunningChange: (running) => {
+    if (running) setRunning(false);
+    isOcrRunning = running;
+    playPauseButton.textContent = isOcrRunning || isRunning ? 'Stop' : 'Start';
+  },
+  getCachedTranslation,
+  setCachedTranslation,
+  ocrIntervalMs,
+  candidateTimeoutMs: CANDIDATE_TIMEOUT_MS,
+  holdClearMs: HOLD_CLEAR_MS
+});
+
+playPauseButton.addEventListener('click', () => {
+  if (isOcrRunning) screenOcrCoordinator.stop('');
+  else screenOcrCoordinator.start();
+});
+ocrOnceButton.addEventListener('click', () => screenOcrCoordinator.readOnce());
 addWordButton.addEventListener('click', addSelectedWord);
 dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDictionaryWindow());
 settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
@@ -463,6 +439,7 @@ window.overlayApi.onApplyUiSettings((settings) => {
   if (settings.fontScale) document.documentElement.style.setProperty('--font-scale', `${Number(settings.fontScale) / 100}`);
   if (settings.theme) { panel.dataset.theme = settings.theme; localStorage.setItem('subtitle-overlay-theme', settings.theme); }
   if (settings.font) applyFont(settings.font);
+  if (typeof settings.deleteConfirm !== 'undefined') localStorage.setItem('subtitle-confirm-delete', settings.deleteConfirm);
   if (settings.windowWidth && settings.windowHeight) {
     window.overlayApi.setWindowSize(Number(settings.windowWidth), Number(settings.windowHeight));
   }
@@ -482,14 +459,17 @@ function applyFont(font) {
   localStorage.setItem('subtitle-overlay-font', font);
 }
 
-panel.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
-applyFont(localStorage.getItem('subtitle-overlay-font') || 'system');
+panel.dataset.theme = 'green';
+applyFont('system');
 
 async function loadInitSettings() {
   try {
     const s = await window.overlayApi.getUiSettings();
+    panel.dataset.theme = s.theme || 'green';
+    localStorage.setItem('subtitle-overlay-theme', panel.dataset.theme);
     applyFont(s.font || 'system');
     document.documentElement.style.setProperty('--font-scale', `${(s.fontScale || 100) / 100}`);
+    localStorage.setItem('subtitle-confirm-delete', s.deleteConfirm !== false);
     if (s.windowWidth && s.windowHeight) {
       window.overlayApi.setWindowSize(Number(s.windowWidth), Number(s.windowHeight));
     }
@@ -503,7 +483,7 @@ retranslateButton.addEventListener('click', async () => {
   if (!editedText) return;
   statusElement.textContent = 'Translating...';
   try {
-    russianTextElement.textContent = await window.overlayApi.translate(editedText);
+    russianTextElement.textContent = await window.overlayApi.translate(editedText, 'manual');
     statusElement.textContent = 'Translation updated';
   } catch (_) {
     statusElement.textContent = 'Translation failed';

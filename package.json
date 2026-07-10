@@ -4,10 +4,12 @@
   "private": true,
   "license": "MIT",
   "productName": "Subtitle Translator Overlay",
-  "description": "Always-on-top overlay that shows Russian translations for English SRT subtitles.",
+  "description": "Always-on-top OCR overlay that translates selected English screen text into Russian.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "check:files": "node scripts/check-files.js",
+    "test": "node --test",
     "build": "electron-builder --win portable",
     "dist": "electron-builder --win"
   },

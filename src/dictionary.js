@@ -40,20 +40,45 @@ let studyWords = [];
 let studyIndex = 0;
 let studyTranslationShown = false;
 let filteredEntries = [];
+let deleteConfirmEnabled = true;
 
 function getPageSize() {
   const available = dictionaryList.clientHeight;
   return Math.max(1, Math.floor(available / ITEM_HEIGHT));
 }
 
-document.body.dataset.theme = localStorage.getItem('subtitle-overlay-theme') || 'green';
+document.body.dataset.theme = 'green';
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
   if (key === 'theme') {
     document.body.dataset.theme = value;
     localStorage.setItem('subtitle-overlay-theme', value);
   }
+  if (key === 'deleteConfirm') {
+    deleteConfirmEnabled = value !== false;
+    localStorage.setItem('subtitle-confirm-delete', deleteConfirmEnabled);
+  }
 });
+
+async function loadUiSettings() {
+  try {
+    const settings = await window.overlayApi.getUiSettings();
+    document.body.dataset.theme = settings.theme || 'green';
+    localStorage.setItem('subtitle-overlay-theme', document.body.dataset.theme);
+    deleteConfirmEnabled = settings.deleteConfirm !== false;
+    localStorage.setItem('subtitle-confirm-delete', deleteConfirmEnabled);
+  } catch (_) {}
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+}
+
+function highlightWord(sentence, word) {
+  const escapedWord = escapeRegExp(word || '');
+  if (!escapedWord) return sentence;
+  return sentence.replace(new RegExp(`\\b(${escapedWord})\\b`, 'gi'), '<span class="highlight">$1</span>');
+}
 
 function speakWord(word) {
   if (!('speechSynthesis' in window)) return;
@@ -147,7 +172,7 @@ async function renderDictionary() {
           contextEntry.className = 'contextEntry';
           const englishSentence = document.createElement('div');
           englishSentence.className = 'englishSentence';
-          englishSentence.innerHTML = s.english.replace(new RegExp(`\b(${word})\b`, 'gi'), '<span class="highlight">$1</span>');
+          englishSentence.innerHTML = highlightWord(s.english, word);
           const russianTranslation = document.createElement('div');
           russianTranslation.className = 'russianTranslation';
           russianTranslation.textContent = s.russian;
@@ -163,8 +188,7 @@ async function renderDictionary() {
     remove.textContent = '\uD83D\uDDD1';
     remove.title = 'Delete word';
     remove.addEventListener('click', async () => {
-      const confirmSetting = localStorage.getItem('subtitle-confirm-delete');
-      if (confirmSetting === 'false') {
+      if (!deleteConfirmEnabled) {
         await window.overlayApi.dictionaryDelete(entry.id);
         return;
       }
@@ -295,4 +319,4 @@ window.addEventListener('resize', () => {
   resizeDebounce = setTimeout(() => renderDictionary(), 150);
 });
 
-renderDictionary();
+loadUiSettings().then(renderDictionary);

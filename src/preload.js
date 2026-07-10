@@ -2,8 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('overlayApi', {
   openSrt: () => ipcRenderer.invoke('open-srt'),
-  translate: (text) => ipcRenderer.invoke('translate', text),
-  translateText: (text, sourceLanguage, targetLanguage) => ipcRenderer.invoke('translate-text', text, sourceLanguage, targetLanguage),
+  translate: (text, scope) => ipcRenderer.invoke('translate', text, scope),
+  translateText: (text, sourceLanguage, targetLanguage, scope) => ipcRenderer.invoke('translate-text', text, sourceLanguage, targetLanguage, scope),
   getPhonetic: (word) => ipcRenderer.invoke('get-phonetic', word),
   dictionaryGet: () => ipcRenderer.invoke('dictionary-get'),
   dictionaryAdd: (entry) => ipcRenderer.invoke('dictionary-add', entry),

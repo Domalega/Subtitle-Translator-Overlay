@@ -4,6 +4,9 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 const { createWorker } = require('tesseract.js');
 const { PNG } = require('pngjs');
+const { cleanScreenOcrText } = require('./text-utils');
+const { TranslationService } = require('./translation-service');
+const { DEFAULT_UI_SETTINGS, normalizeUiSettings } = require('./settings-store');
 
 app.disableHardwareAcceleration();
 const singleInstanceLock = app.requestSingleInstanceLock();
@@ -21,6 +24,7 @@ let gameOcrBusy = false;
 let gameModeEnabled = false;
 const gameTranslationCache = new Map();
 const gameDictionaryCache = new Map();
+const translationService = new TranslationService({ fetch: (...args) => fetch(...args) });
 
 function dictionaryFilePath() {
   return path.join(app.getPath('userData'), 'dictionary.json');
@@ -74,13 +78,7 @@ async function getGameOcrWorker() {
 }
 
 function cleanOcrText(text) {
-  const cleaned = text
-    .replace(/[|_{}[\]<>~`^]/g, '')
-    .replace(/\b(?:ENGLISH|RUSSIAN|Screen OCR|Click-through|Open SRT|Hide controls|Offset|Start)\b/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return cleaned.replace(/^[^A-Za-z[("']+/, '').trim();
+  return cleanScreenOcrText(text);
 }
 
 function defaultOcrArea(imageSize) {
@@ -286,7 +284,7 @@ async function runCaptureTranslate(area) {
     const cacheKey = text.toLowerCase().trim();
     let translation = gameTranslationCache.get(cacheKey);
     if (!translation) {
-      translation = await translateText(text, 'en', 'ru');
+      translation = await translateText(text, 'en', 'ru', 'game');
       if (translation) gameTranslationCache.set(cacheKey, translation);
     }
 
@@ -409,22 +407,8 @@ function restoreMainWindow() {
   mainWindow.webContents.send('window-restored');
 }
 
-async function translateText(text, sourceLanguage, targetLanguage) {
-  const query = new URLSearchParams({
-    client: 'gtx',
-    sl: sourceLanguage,
-    tl: targetLanguage,
-    dt: 't',
-    q: text
-  });
-
-  const response = await fetch(`https://translate.googleapis.com/translate_a/single?${query}`);
-  if (!response.ok) {
-    throw new Error(`Translate request failed: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data?.[0]?.map((part) => part?.[0]).join('') || '';
+async function translateText(text, sourceLanguage, targetLanguage, scope = null) {
+  return translationService.translate(text, sourceLanguage, targetLanguage, scope ? { scope } : {});
 }
 
 async function getEnglishPhonetic(word) {
@@ -563,12 +547,12 @@ ipcMain.handle('cancel-ocr-area', () => {
   selectionWindow?.close();
 });
 
-ipcMain.handle('translate', async (_event, text) => {
-  return translateText(text, 'en', 'ru');
+ipcMain.handle('translate', async (_event, text, scope) => {
+  return translateText(text, 'en', 'ru', scope || null);
 });
 
-ipcMain.handle('translate-text', async (_event, text, sourceLanguage, targetLanguage) => {
-  return translateText(text, sourceLanguage, targetLanguage);
+ipcMain.handle('translate-text', async (_event, text, sourceLanguage, targetLanguage, scope) => {
+  return translateText(text, sourceLanguage, targetLanguage, scope || null);
 });
 
 ipcMain.handle('get-phonetic', async (_event, word) => {
@@ -757,16 +741,7 @@ async function saveGameSettings(settings) {
   await fs.writeFile(gameSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
 }
 
-const defaultUiSettings = {
-  theme: 'green',
-  fontScale: 100,
-  windowWidth: 980,
-  windowHeight: 360,
-  font: 'system',
-  hotkey: 'CommandOrControl+Shift+T',
-  deleteConfirm: true,
-  contextCount: 5
-};
+const defaultUiSettings = DEFAULT_UI_SETTINGS;
 
 function uiSettingsPath() {
   return path.join(app.getPath('userData'), 'ui-settings.json');
@@ -774,15 +749,21 @@ function uiSettingsPath() {
 
 function loadUiSettings() {
   try {
-    return JSON.parse(fsSync.readFileSync(uiSettingsPath(), 'utf8'));
+    const settings = JSON.parse(fsSync.readFileSync(uiSettingsPath(), 'utf8'));
+    return normalizeUiSettings(settings);
   } catch (_) {
-    return { ...defaultUiSettings };
+    return normalizeUiSettings(defaultUiSettings);
   }
 }
 
+let uiSettingsSaveQueue = Promise.resolve();
+
 async function saveUiSettings(settings) {
-  await fs.mkdir(app.getPath('userData'), { recursive: true });
-  await fs.writeFile(uiSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+  uiSettingsSaveQueue = uiSettingsSaveQueue.then(async () => {
+    await fs.mkdir(app.getPath('userData'), { recursive: true });
+    await fs.writeFile(uiSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+  });
+  return uiSettingsSaveQueue;
 }
 
 ipcMain.handle('open-translate-window', () => {
@@ -823,12 +804,12 @@ function registerGameHotkey(accelerator) {
   }
 }
 
-ipcMain.handle('set-game-hotkey', (_event, accelerator) => {
+ipcMain.handle('set-game-hotkey', async (_event, accelerator) => {
   const ok = registerGameHotkey(accelerator);
   if (ok) {
     const settings = loadUiSettings();
     settings.hotkey = accelerator;
-    saveUiSettings(settings);
+    await saveUiSettings(settings);
   }
   return ok;
 });

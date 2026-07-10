@@ -89,8 +89,12 @@
         if (generation === this.generation) this.output.setStatus(`Screen OCR error: ${error.message}`);
       } finally {
         this.isBusy = false;
-        if (scheduleNext && this.isRunning && generation === this.generation) {
-          this.ocrTimer = this.setTimeout(() => this.read({ scheduleNext: true, generation }), this.ocrIntervalMs);
+        if (this.isRunning && (scheduleNext || generation !== this.generation)) {
+          if (generation === this.generation) {
+            this.ocrTimer = this.setTimeout(() => this.read({ scheduleNext: true, generation }), this.ocrIntervalMs);
+          } else {
+            this.read({ scheduleNext: true, generation: this.generation });
+          }
         }
       }
     }

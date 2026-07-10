@@ -11,30 +11,30 @@
     }
 
     showRecognizedText(text) {
-      this.englishTextElement.textContent = text;
+      if (this.englishTextElement) this.englishTextElement.textContent = text;
     }
 
     showTranslation(text) {
-      this.russianTextElement.textContent = text;
+      if (this.russianTextElement) this.russianTextElement.textContent = text;
     }
 
     showTranslationPending() {
-      if (!this.russianTextElement.textContent || this.russianTextElement.textContent === 'Translation will appear here') {
+      if (this.russianTextElement && (!this.russianTextElement.textContent || this.russianTextElement.textContent === 'Translation will appear here')) {
         this.russianTextElement.textContent = 'Translating...';
       }
     }
 
     showTranslationError(message) {
-      this.statusElement.textContent = message || 'Translation failed';
+      if (this.statusElement) this.statusElement.textContent = message || 'Translation failed';
     }
 
     setStatus(message) {
-      this.statusElement.textContent = message || '';
+      if (this.statusElement) this.statusElement.textContent = message || '';
     }
 
     clear() {
-      this.englishTextElement.textContent = '';
-      this.russianTextElement.textContent = '';
+      if (this.englishTextElement) this.englishTextElement.textContent = '';
+      if (this.russianTextElement) this.russianTextElement.textContent = '';
     }
 
     setVisible(_visible) {}

@@ -23,7 +23,7 @@
   }
 
   function isLikelySubtitle(text) {
-    if (!text || text.length < 3 || text.length > 180) return false;
+    if (!text || text.length < 2 || text.length > 180) return false;
     if (!/[a-zA-Z]/.test(text)) return false;
     if (/[&=:%]{2,}/.test(text)) return false;
     if ((text.match(/[A-Za-z]/g) || []).length < text.length * 0.45) return false;

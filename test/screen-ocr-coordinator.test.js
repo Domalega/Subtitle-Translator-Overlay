@@ -204,6 +204,27 @@ test('ScreenOcrCoordinator stop/start ignores old result', async () => {
   assert.equal(output.recognized, 'Second subtitle is valid text');
 });
 
+test('ScreenOcrCoordinator resumes after an immediate stop/start during OCR', async () => {
+  let resolveFirst;
+  let calls = 0;
+  const { coordinator, output } = createCoordinator({
+    readOcr: () => {
+      calls += 1;
+      if (calls === 1) return new Promise((resolve) => { resolveFirst = resolve; });
+      return Promise.resolve('Second subtitle is valid text');
+    }
+  });
+
+  coordinator.start();
+  coordinator.stop('stopped');
+  coordinator.start();
+  resolveFirst('First subtitle should not be shown');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(calls, 2);
+  assert.equal(output.recognized, 'Second subtitle is valid text');
+});
+
 test('ScreenOcrCoordinator calls output methods with their object receiver', async () => {
   const output = {
     recognized: '',

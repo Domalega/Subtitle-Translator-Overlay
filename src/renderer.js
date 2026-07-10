@@ -292,11 +292,15 @@ const retranslateButton = document.getElementById('retranslateButton');
 retranslateButton.addEventListener('click', async () => {
   const editedText = englishTextElement.textContent.trim();
   if (!editedText) return;
+  const requestId = ++manualTranslationRequestId;
   statusElement.textContent = 'Translating...';
   try {
-    russianTextElement.textContent = await window.overlayApi.translate(editedText, 'manual');
+    const translation = await window.overlayApi.translate(editedText, 'manual');
+    if (requestId !== manualTranslationRequestId || englishTextElement.textContent.trim() !== editedText) return;
+    russianTextElement.textContent = translation;
     statusElement.textContent = 'Translation updated';
   } catch (_) {
+    if (requestId !== manualTranslationRequestId) return;
     statusElement.textContent = 'Translation failed';
   }
 });
@@ -307,11 +311,14 @@ focusToggleButton.addEventListener('click', () => {
 });
 
 let isGameMode = false;
+let manualTranslationRequestId = 0;
 gameModeToggleButton.addEventListener('click', async () => {
   isGameMode = !isGameMode;
+  manualTranslationRequestId += 1;
   gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
   gameModeToggleButton.classList.toggle('primary', isGameMode);
   await window.overlayApi.setGameModeEnabled(isGameMode);
+  if (isGameMode) stopOcr('Screen OCR stopped for Game mode');
   englishTextElement.contentEditable = isGameMode ? 'true' : 'false';
   retranslateButton.hidden = !isGameMode;
   if (isGameMode) {
@@ -326,6 +333,7 @@ gameModeToggleButton.addEventListener('click', async () => {
 });
 
 window.overlayApi.onCaptureResult((data) => {
+  manualTranslationRequestId += 1;
   englishTextElement.textContent = data.original || 'No English text found';
   russianTextElement.textContent = data.translation || '-';
   retranslateButton.hidden = false;

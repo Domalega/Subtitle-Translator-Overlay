@@ -9,6 +9,15 @@ test('SubtitleStabilizer handles empty OCR', () => {
   assert.equal(result.reason, 'empty');
 });
 
+test('SubtitleStabilizer accepts short game subtitles', () => {
+  const stabilizer = new SubtitleStabilizer();
+  for (const text of ['Yes.', 'No.', 'Run!', 'Wait.', 'Help!', 'Go!', 'Stop!']) {
+    const result = stabilizer.process(text);
+    assert.equal(result.candidate, true, text);
+    stabilizer.reset();
+  }
+});
+
 test('SubtitleStabilizer confirms candidate', () => {
   const stabilizer = new SubtitleStabilizer();
   const result = stabilizer.process('Hello, this is a subtitle');

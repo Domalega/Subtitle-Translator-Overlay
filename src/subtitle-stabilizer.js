@@ -18,16 +18,17 @@
       this.emptyFrameCount = 0;
     }
 
-    process(rawText) {
+    process(rawText, confidence) {
       const text = String(rawText || '').trim();
-      if (!textUtils.isLikelySubtitle(text)) {
+      const evaluation = textUtils.evaluateOcrResult({ text, confidence });
+      if (!evaluation.accepted) {
         this.emptyFrameCount += 1;
         return {
           rawText: text,
           normalizedText: '',
           accepted: false,
           candidate: false,
-          reason: text ? 'noise' : 'empty',
+          reason: text ? evaluation.reason : 'empty',
           shouldClearAfterHold: this.emptyFrameCount >= this.emptyFrameThreshold,
           replacesPrevious: false
         };

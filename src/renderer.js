@@ -28,9 +28,9 @@ const OCR_CACHE_MAX = 500;
 let ocrCacheInsertOrder = [];
 const CANDIDATE_TIMEOUT_MS = 180;
 const EMPTY_FRAME_THRESHOLD = 3;
-const HOLD_CLEAR_MS = 2000;
+const HOLD_CLEAR_MS = 1200;
 
-const ocrIntervalMs = 1000;
+const ocrIntervalMs = 200;
 
 const cachePrefix = 'subtitle-translation:';
 
@@ -214,7 +214,8 @@ const outputRouter = new OutputRouter({ mainOutput: mainPanelOutput, nearSourceO
 const screenOcrCoordinator = new ScreenOcrCoordinator({
   output: outputRouter,
   stabilizer: new SubtitleStabilizer({ emptyFrameThreshold: EMPTY_FRAME_THRESHOLD }),
-  readOcr: () => window.overlayApi.readScreenSubtitle(),
+  captureFrame: () => window.overlayApi.captureScreenSubtitleFrame(),
+  recognizeFrame: (frame) => window.overlayApi.recognizeScreenSubtitleFrame(frame),
   translate: (text, options) => translate(text, options),
   hasOcrArea: () => hasOcrArea,
   onRunningChange: (running) => {
@@ -226,6 +227,7 @@ const screenOcrCoordinator = new ScreenOcrCoordinator({
   setCachedTranslation,
   setTimeout: (callback, delay) => window.setTimeout(callback, delay),
   clearTimeout: (timerId) => window.clearTimeout(timerId),
+  onMetrics: (metrics) => window.overlayApi.recordOcrMetrics(metrics),
   ocrIntervalMs,
   candidateTimeoutMs: CANDIDATE_TIMEOUT_MS,
   holdClearMs: HOLD_CLEAR_MS
@@ -370,8 +372,15 @@ window.overlayApi.onWindowRestored(() => {
 
 window.overlayApi.onStopOcr(() => stopOcr('Screen OCR stopped by Ctrl+Shift+S'));
 
-window.overlayApi.onOcrProgress((progress) => {
-  if (isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${progress}%`;
+let activeOcrProgressRequest = null;
+window.overlayApi.onOcrProgress((event) => {
+  if (typeof event === 'number') { if (isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${event}%`; return; }
+  if (event?.type === 'started') activeOcrProgressRequest = `${event.generation}:${event.requestId}`;
+  if (event?.type === 'progress' && activeOcrProgressRequest === `${event.generation}:${event.requestId}` && isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${event.progress}%`;
+  if (event?.type === 'reset' && activeOcrProgressRequest === `${event.generation}:${event.requestId}`) {
+    activeOcrProgressRequest = null;
+    if (isOcrRunning) statusElement.textContent = 'Screen OCR: running';
+  }
 });
 
 window.overlayApi.onOcrAreaChanged((area) => {

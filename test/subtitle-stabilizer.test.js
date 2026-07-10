@@ -56,7 +56,7 @@ test('SubtitleStabilizer detects growing replica', () => {
 test('SubtitleStabilizer filters single OCR noise', () => {
   const stabilizer = new SubtitleStabilizer();
   const result = stabilizer.process('&&&===');
-  assert.equal(result.reason, 'noise');
+  assert.equal(result.reason, 'artifact');
   assert.equal(result.shouldClearAfterHold, false);
 });
 

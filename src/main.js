@@ -5,6 +5,10 @@ const path = require('node:path');
 const { createWorker } = require('tesseract.js');
 const { PNG } = require('pngjs');
 const { cleanScreenOcrText } = require('./text-utils');
+const { OcrWorkerService } = require('./ocr-worker-service');
+const { calculateCropBounds } = require('./crop-bounds');
+const { FrameChangeDetector } = require('./frame-change-detector');
+const { OcrMetrics } = require('./ocr-metrics');
 const { TranslationService } = require('./translation-service');
 const { DEFAULT_UI_SETTINGS, normalizeUiSettings } = require('./settings-store');
 const { calculateNearSourceBounds } = require('./near-source-position');
@@ -19,7 +23,6 @@ let dictionaryWindow;
 let captureWindow;
 let translateWindow;
 let nearSourceWindow;
-let ocrWorkerPromise;
 let gameOcrWorkerPromise;
 let ocrArea = null;
 let ocrAnchorBoundsDip = null;
@@ -30,6 +33,20 @@ let gameModeEnabled = false;
 const gameTranslationCache = new Map();
 const gameDictionaryCache = new Map();
 const translationService = new TranslationService({ fetch: (...args) => fetch(...args) });
+const ocrMetrics = new OcrMetrics();
+const screenOcrWorker = new OcrWorkerService({
+  createWorker,
+  logger: (message) => {
+    const request = message.request;
+    if (message.status === 'recognizing text' && request) {
+      mainWindow?.webContents.send('ocr-progress', { type: 'progress', requestId: request.requestId, generation: request.generation, progress: Math.round(message.progress * 100) });
+      if (process.env.OCR_DEBUG === '1') console.debug('[OCR] progress', { requestId: request.requestId, generation: request.generation, progress: Math.round(message.progress * 100) });
+    }
+    if (message.status === 'worker-ready') ocrMetrics.record(message);
+  }
+});
+const frameChangeDetector = new FrameChangeDetector();
+let screenFrameId = 0;
 
 function dictionaryFilePath() {
   return path.join(app.getPath('userData'), 'dictionary.json');
@@ -46,29 +63,6 @@ async function readDictionary() {
 async function writeDictionary(entries) {
   await fs.mkdir(app.getPath('userData'), { recursive: true });
   await fs.writeFile(dictionaryFilePath(), JSON.stringify(entries, null, 2), 'utf8');
-}
-
-async function getOcrWorker() {
-  if (!ocrWorkerPromise) {
-    ocrWorkerPromise = createWorker('eng', 1, {
-      logger: (message) => {
-        if (message.status === 'recognizing text') {
-          mainWindow?.webContents.send('ocr-progress', Math.round(message.progress * 100));
-        }
-      }
-    });
-
-    ocrWorkerPromise = ocrWorkerPromise.then(async (worker) => {
-      await worker.setParameters({
-        tessedit_pageseg_mode: '6',
-        preserve_interword_spaces: '1',
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?\'"-:;()[]&% '
-      });
-      return worker;
-    });
-  }
-
-  return ocrWorkerPromise;
 }
 
 async function getGameOcrWorker() {
@@ -253,13 +247,20 @@ function sendNearSourceState() {
   if (!nearSourceWindow || nearSourceWindow.isDestroyed()) return;
   nearSourceWindow.webContents.send('near-source-overlay-settings', nearSourceSettings);
   if (nearSourceContent) nearSourceWindow.webContents.send('near-source-overlay-content', nearSourceContent);
+  if (nearSourceContent) placeNearSourceOverlay();
+}
+
+function nearSourceOverlaySize(display) {
+  const width = Math.max(240, Math.min(nearSourceSettings.nearSourceMaxWidth, display.workArea.width));
+  const lineHeight = nearSourceSettings.nearSourceFontSize * 1.25;
+  return { width, height: Math.max(40, Math.ceil(lineHeight * nearSourceSettings.nearSourceMaxLines + 20)) };
 }
 
 function createNearSourceWindow() {
   if (nearSourceWindow && !nearSourceWindow.isDestroyed()) return nearSourceWindow;
   nearSourceWindow = new BrowserWindow({
     width: 300,
-    height: 80,
+    height: 100,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -293,30 +294,31 @@ function updateNearSourceSettings(settings) {
   nearSourceSettings = normalizeUiSettings({ ...nearSourceSettings, ...settings });
   if (nearSourceWindow && !nearSourceWindow.isDestroyed()) {
     nearSourceWindow.webContents.send('near-source-overlay-settings', nearSourceSettings);
+    if (nearSourceContent) placeNearSourceOverlay();
   }
 }
 
 function isNearSourceEnabled() {
-  return nearSourceSettings.displayMode === 'near-source' && !gameModeEnabled;
+  return ['overlay', 'both'].includes(nearSourceSettings.displayMode) && !gameModeEnabled;
 }
 
 function showNearSourceOverlay(payload) {
   if (!isNearSourceEnabled() || !ocrAnchorBoundsDip || typeof payload?.text !== 'string' || !payload.text.trim()) return false;
   nearSourceContent = { text: payload.text };
   const window = createNearSourceWindow();
-  window.webContents.send('near-source-overlay-content', nearSourceContent);
+  if (process.env.OCR_DEBUG === '1') console.debug('[OCR] overlay show requested', { textLength: payload.text.length });
+  if (!window.webContents.isLoading()) {
+    window.webContents.send('near-source-overlay-content', nearSourceContent);
+    placeNearSourceOverlay();
+  }
   return true;
 }
 
-function placeNearSourceOverlay(size) {
+function placeNearSourceOverlay() {
   if (!isNearSourceEnabled() || !nearSourceContent || !ocrAnchorBoundsDip) return false;
   const window = createNearSourceWindow();
   const display = screen.getDisplayMatching(ocrAnchorBoundsDip);
-  const maxWidth = Math.min(nearSourceSettings.nearSourceMaxWidth, display.workArea.width);
-  const overlaySize = {
-    width: Math.max(240, Math.min(maxWidth, Math.round(Number(size?.width) || maxWidth))),
-    height: Math.max(40, Math.min(300, Math.round(Number(size?.height) || 80)))
-  };
+  const overlaySize = nearSourceOverlaySize(display);
   const bounds = calculateNearSourceBounds({
     anchorBounds: ocrAnchorBoundsDip,
     overlaySize,
@@ -324,8 +326,12 @@ function placeNearSourceOverlay(size) {
     placement: nearSourceSettings.nearSourcePlacement,
     verticalOffset: nearSourceSettings.nearSourceVerticalOffset
   });
-  window.setBounds(bounds);
+  const currentBounds = window.getBounds();
+  if (currentBounds.x !== bounds.x || currentBounds.y !== bounds.y || currentBounds.width !== bounds.width || currentBounds.height !== bounds.height) {
+    try { window.setBounds(bounds); } catch (error) { console.error('[Near source overlay] positioning failed', error); return false; }
+  }
   if (!window.isVisible()) window.showInactive();
+  if (process.env.OCR_DEBUG === '1') console.debug('[OCR] overlay shown', { width: bounds.width, height: bounds.height });
   return true;
 }
 
@@ -454,9 +460,7 @@ function createWindow() {
     nearSourceWindow = null;
     mainWindow = null;
     globalShortcut.unregisterAll();
-    if (ocrWorkerPromise) {
-      ocrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
-    }
+    screenOcrWorker.dispose().catch(() => {});
     if (gameOcrWorkerPromise) {
       gameOcrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
     }
@@ -481,6 +485,27 @@ function createWindow() {
   });
 
   const uiSettings = loadUiSettings();
+  const savedOcrArea = uiSettings.ocrArea;
+  if (savedOcrArea && [savedOcrArea.x, savedOcrArea.y, savedOcrArea.width, savedOcrArea.height].every(Number.isFinite)
+    && savedOcrArea.width > 0 && savedOcrArea.height > 0) {
+    const display = screen.getPrimaryDisplay();
+    const scale = display.scaleFactor || 1;
+    ocrArea = {
+      x: savedOcrArea.x * scale,
+      y: savedOcrArea.y * scale,
+      width: savedOcrArea.width * scale,
+      height: savedOcrArea.height * scale
+    };
+    ocrAnchorBoundsDip = {
+      x: display.bounds.x + savedOcrArea.x,
+      y: display.bounds.y + savedOcrArea.y,
+      width: savedOcrArea.width,
+      height: savedOcrArea.height
+    };
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow?.webContents.send('ocr-area-changed', ocrArea);
+    });
+  }
   updateNearSourceSettings(uiSettings);
   registerGameHotkey(uiSettings.hotkey || 'CommandOrControl+Shift+T');
 }
@@ -518,14 +543,17 @@ if (!singleInstanceLock) {
     restoreMainWindow();
   });
 
-  app.whenReady().then(createWindow);
+  app.whenReady().then(() => {
+    createWindow();
+    screenOcrWorker.initialize().catch((error) => {
+      if (process.env.OCR_DEBUG === '1') console.debug('[OCR] worker warm-up failed:', error.message);
+    });
+  });
 }
 
 app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
-  if (ocrWorkerPromise) {
-    ocrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
-  }
+  screenOcrWorker.dispose().catch(() => {});
   if (gameOcrWorkerPromise) {
     gameOcrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
   }
@@ -597,7 +625,7 @@ ipcMain.handle('set-ui-setting', async (_event, key, value) => {
   const normalized = normalizeUiSettings(settings);
   await saveUiSettings(normalized);
   updateNearSourceSettings(normalized);
-  if (normalized.displayMode !== 'near-source') hideNearSourceOverlay();
+  if (!['overlay', 'both'].includes(normalized.displayMode)) hideNearSourceOverlay();
   const appliedValue = normalized[key];
   mainWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
   settingsWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
@@ -619,7 +647,7 @@ ipcMain.handle('select-ocr-area', () => {
   if (!selectionWindow) createSelectionWindow();
 });
 
-ipcMain.handle('complete-ocr-area', (_event, area) => {
+ipcMain.handle('complete-ocr-area', async (_event, area) => {
   if (!area || ![area.x, area.y, area.width, area.height].every(Number.isFinite)) return null;
   const display = screen.getPrimaryDisplay();
   const scale = display.scaleFactor || 1;
@@ -635,6 +663,10 @@ ipcMain.handle('complete-ocr-area', (_event, area) => {
     width: area.width,
     height: area.height
   };
+  frameChangeDetector.reset();
+  const settings = loadUiSettings();
+  settings.ocrArea = { x: area.x, y: area.y, width: area.width, height: area.height };
+  await saveUiSettings(settings);
 
   selectionWindow?.close();
   mainWindow?.webContents.send('ocr-area-changed', ocrArea);
@@ -780,26 +812,100 @@ ipcMain.handle('export-dictionary', async (_event, entries, format) => {
   return true;
 });
 
-ipcMain.handle('read-screen-subtitle', async () => {
-  if (!ocrArea) return '';
-
+ipcMain.handle('capture-screen-subtitle-frame', async () => {
+  if (!ocrArea) return null;
+  const capturedAt = performance.now();
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.size;
+  const scale = primaryDisplay.scaleFactor || 1;
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
-    thumbnailSize: { width, height }
+    thumbnailSize: { width: Math.round(primaryDisplay.size.width * scale), height: Math.round(primaryDisplay.size.height * scale) }
   });
+  const captureMs = performance.now() - capturedAt;
   const source = sources[0];
-  if (!source) return '';
+  if (!source) return null;
+  const imageSize = source.thumbnail.getSize();
+  const cropStartedAt = performance.now();
+  const cropBounds = calculateCropBounds({
+    imageSize,
+    displaySize: { width: primaryDisplay.size.width * scale, height: primaryDisplay.size.height * scale },
+    ocrArea
+  });
+  const crop = source.thumbnail.crop(cropBounds);
+  const cropMs = performance.now() - cropStartedAt;
+  const fingerprintStartedAt = performance.now();
+  const change = frameChangeDetector.inspect(crop.toBitmap(), crop.getSize(), capturedAt);
+  const frameFingerprintMs = performance.now() - fingerprintStartedAt;
+  if (!change.changed) {
+    if (process.env.OCR_DEBUG === '1') console.debug('[OCR] frame skipped', { reason: 'unchanged' });
+    return null;
+  }
+  const png = subtitleMaskToPng(crop);
+  const frame = {
+    id: ++screenFrameId,
+    capturedAt,
+    image: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
+    imageChanged: change.imageChanged,
+    forced: change.forced
+  };
+  if (process.env.OCR_DEBUG === '1') {
+    console.debug('[OCR] frame changed', { id: frame.id, imageBytes: frame.image.byteLength });
+  }
+  ocrMetrics.record({ frameId: frame.id, captureMs, cropMs, frameFingerprintMs });
+  return frame;
+});
 
-  const image = nativeImage.createFromDataURL(source.thumbnail.toDataURL());
-  const imageSize = image.getSize();
-  const crop = image.crop(clampArea(ocrArea || defaultOcrArea(imageSize), imageSize));
-  const maskedPng = subtitleMaskToPng(crop);
+function normalizeImageBuffer(value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (value && Array.isArray(value.data)) return Buffer.from(value.data);
+  return null;
+}
 
-  const worker = await getOcrWorker();
-  const result = await worker.recognize(maskedPng);
-  return cleanOcrText(result.data.text);
+ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
+  if (process.env.OCR_DEBUG === '1') {
+    const value = frame?.image;
+    console.debug('[OCR handler]', {
+      keys: frame && typeof frame === 'object' ? Object.keys(frame) : [],
+      type: typeof frame,
+      imageType: typeof value,
+      constructor: value?.constructor?.name,
+      isBuffer: Buffer.isBuffer(value),
+      isUint8Array: value instanceof Uint8Array,
+      isArrayBuffer: value instanceof ArrayBuffer,
+      byteLength: value?.byteLength,
+      id: frame?.id,
+      generation: frame?.generation,
+      imageChanged: frame?.imageChanged,
+      forced: frame?.forced
+    });
+  }
+  const image = normalizeImageBuffer(frame?.image);
+  if (!image) throw new Error('Invalid OCR frame');
+  if (process.env.OCR_DEBUG === '1') {
+    console.debug('[OCR worker input]', { isBuffer: Buffer.isBuffer(image), constructor: image.constructor.name, byteLength: image.byteLength, id: frame.id, generation: frame.generation });
+  }
+  const startedAt = performance.now();
+  const request = { requestId: frame.id, generation: frame.generation };
+  mainWindow?.webContents.send('ocr-progress', { type: 'started', ...request });
+  if (process.env.OCR_DEBUG === '1') console.debug('[OCR] started', request);
+  try {
+    const result = await screenOcrWorker.recognize(image, request);
+    const text = cleanOcrText(result.data.text);
+    const confidence = Number.isFinite(result.data.confidence) ? result.data.confidence : undefined;
+    if (process.env.OCR_DEBUG === '1') console.debug('[OCR] completed', { ...request, textLength: text.length, confidence });
+    return { text, confidence, metrics: { ...frame.metrics, workerInitMs: screenOcrWorker.workerInitMs, ocrMs: performance.now() - startedAt } };
+  } catch (error) {
+    if (process.env.OCR_DEBUG === '1') console.debug(error?.code === 'OCR_TIMEOUT' ? '[OCR] timeout' : '[OCR] failed', { ...request, message: error.message });
+    throw error;
+  } finally {
+    mainWindow?.webContents.send('ocr-progress', { type: 'reset', ...request });
+  }
+});
+
+ipcMain.handle('ocr-debug-metrics', (_event, metrics) => {
+  ocrMetrics.record(metrics);
 });
 
 ipcMain.handle('start-capture-translate', () => {

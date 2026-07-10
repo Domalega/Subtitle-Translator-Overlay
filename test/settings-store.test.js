@@ -40,3 +40,7 @@ test('normalizeUiSettings adds and validates near-source settings', () => {
   assert.equal(settings.nearSourceVerticalOffset, 0);
   assert.equal(normalizeUiSettings({}).displayMode, 'panel');
 });
+
+test('normalizeUiSettings migrates near-source display mode to both', () => {
+  assert.equal(normalizeUiSettings({ displayMode: 'near-source' }).displayMode, 'both');
+});

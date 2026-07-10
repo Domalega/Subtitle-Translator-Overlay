@@ -46,7 +46,8 @@
       ? source.deleteConfirm
       : DEFAULT_UI_SETTINGS.deleteConfirm;
     merged.contextCount = clampNumber(source.contextCount, DEFAULT_UI_SETTINGS.contextCount, 1, 10);
-    merged.displayMode = source.displayMode === 'near-source' ? 'near-source' : 'panel';
+    merged.displayMode = source.displayMode === 'near-source' ? 'both'
+      : ['panel', 'overlay', 'both'].includes(source.displayMode) ? source.displayMode : 'panel';
     merged.nearSourcePlacement = ['auto', 'below', 'above'].includes(source.nearSourcePlacement)
       ? source.nearSourcePlacement : DEFAULT_UI_SETTINGS.nearSourcePlacement;
     merged.nearSourceVerticalOffset = clampNumber(source.nearSourceVerticalOffset, DEFAULT_UI_SETTINGS.nearSourceVerticalOffset, 0, 100);

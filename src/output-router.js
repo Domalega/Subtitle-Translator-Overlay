@@ -14,8 +14,8 @@
     }
 
     setDisplayMode(mode) {
-      this.displayMode = mode === 'near-source' ? 'near-source' : 'panel';
-      if (this.displayMode !== 'near-source' || this.gameMode) {
+      this.displayMode = ['panel', 'overlay', 'both'].includes(mode) ? mode : 'panel';
+      if (!this.shouldUseOverlay()) {
         this.nearSourceOutput.setVisible(false);
       } else if (this.lastTranslation) {
         this.nearSourceOutput.showTranslation(this.lastTranslation, this.lastRecognizedText);
@@ -28,31 +28,36 @@
       else this.setDisplayMode(this.displayMode);
     }
 
-    shouldUseNearSource() {
-      return this.displayMode === 'near-source' && !this.gameMode;
+    shouldUseOverlay() {
+      return !this.gameMode && (this.displayMode === 'overlay' || this.displayMode === 'both');
+    }
+
+    shouldUsePanel() {
+      return this.gameMode || this.displayMode === 'panel' || this.displayMode === 'both';
     }
 
     showRecognizedText(text) {
       this.lastRecognizedText = typeof text === 'string' ? text : '';
-      this.mainOutput.showRecognizedText(text);
-      if (this.shouldUseNearSource()) this.nearSourceOutput.showRecognizedText(text);
+      if (this.shouldUsePanel()) this.mainOutput.showRecognizedText(text);
+      if (this.shouldUseOverlay()) this.nearSourceOutput.showRecognizedText(text);
     }
 
     showTranslationPending(sourceText) {
-      this.mainOutput.showTranslationPending(sourceText);
-      if (this.shouldUseNearSource()) this.nearSourceOutput.showTranslationPending(sourceText);
+      if (this.shouldUsePanel()) this.mainOutput.showTranslationPending(sourceText);
+      if (this.shouldUseOverlay()) this.nearSourceOutput.showTranslationPending(sourceText);
     }
 
     showTranslation(translatedText, sourceText) {
       if (typeof sourceText === 'string') this.lastRecognizedText = sourceText;
       if (typeof translatedText === 'string' && translatedText.trim()) this.lastTranslation = translatedText;
-      this.mainOutput.showTranslation(translatedText, sourceText);
-      if (this.shouldUseNearSource()) this.nearSourceOutput.showTranslation(translatedText, sourceText || this.lastRecognizedText);
+      if (this.shouldUsePanel()) this.mainOutput.showTranslation(translatedText, sourceText);
+      if (this.shouldUseOverlay()) this.nearSourceOutput.showTranslation(translatedText, sourceText || this.lastRecognizedText);
+      if (typeof process !== 'undefined' && process.env?.OCR_DEBUG === '1') console.debug('[OCR] output routed', { panel: this.shouldUsePanel(), overlay: this.shouldUseOverlay(), textLength: String(translatedText || '').length });
     }
 
     showTranslationError(error) {
-      this.mainOutput.showTranslationError(error);
-      if (this.shouldUseNearSource()) this.nearSourceOutput.showTranslationError(error);
+      if (this.shouldUsePanel()) this.mainOutput.showTranslationError(error);
+      if (this.shouldUseOverlay()) this.nearSourceOutput.showTranslationError(error);
     }
 
     setStatus(status) { this.mainOutput.setStatus(status); }
@@ -64,9 +69,11 @@
       this.nearSourceOutput.clear();
     }
 
+    hideOverlay() { this.nearSourceOutput.setVisible(false); }
+
     setVisible(visible) {
       this.mainOutput.setVisible(visible);
-      if (!visible || this.shouldUseNearSource()) this.nearSourceOutput.setVisible(visible);
+      if (!visible || this.shouldUseOverlay()) this.nearSourceOutput.setVisible(visible);
     }
   }
 

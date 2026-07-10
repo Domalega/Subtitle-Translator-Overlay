@@ -35,7 +35,7 @@ function setStatus(message) {
   setTimeout(() => { statusElement.hidden = true; }, 2000);
 }
 
-function updateNearSourceVisibility() { nearSourceSettings.hidden = displayMode.value !== 'near-source'; }
+function updateNearSourceVisibility() { nearSourceSettings.hidden = displayMode.value === 'panel'; }
 function updateNearSourceLabels() {
   document.getElementById('nearSourceVerticalOffsetValue').textContent = `${nearSourceVerticalOffset.value} px`;
   document.getElementById('nearSourceFontSizeValue').textContent = `${nearSourceFontSize.value} px`;
@@ -87,7 +87,7 @@ contextCountSelect.addEventListener('change', () => setUiSettingQueued('contextC
 displayMode.addEventListener('change', () => {
   updateNearSourceVisibility();
   setUiSettingQueued('displayMode', displayMode.value);
-  if (displayMode.value === 'near-source') setStatus('Near-source mode needs a selected OCR area. Select it again if no translation appears.');
+  if (displayMode.value !== 'panel') setStatus('Overlay mode needs a selected OCR area. Select it again if no translation appears.');
 });
 nearSourcePlacement.addEventListener('change', () => setUiSettingQueued('nearSourcePlacement', nearSourcePlacement.value));
 [[nearSourceVerticalOffset, 'nearSourceVerticalOffset', Number], [nearSourceFontSize, 'nearSourceFontSize', Number], [nearSourceBackgroundOpacity, 'nearSourceBackgroundOpacity', (value) => Number(value) / 100], [nearSourceMaxWidth, 'nearSourceMaxWidth', Number], [nearSourceMaxLines, 'nearSourceMaxLines', Number]].forEach(([input, key, convert]) => {
@@ -184,7 +184,7 @@ resetButton.addEventListener('click', async () => {
 document.querySelectorAll('.accordionHeader').forEach((header) => {
   const section = header.dataset.section;
   const body = document.getElementById(`section${section.charAt(0).toUpperCase() + section.slice(1)}`);
-  const isOpen = section === 'appearance';
+   const isOpen = section === 'display';
   if (isOpen) { header.classList.add('open'); body.classList.add('open'); }
 
   header.addEventListener('click', () => {

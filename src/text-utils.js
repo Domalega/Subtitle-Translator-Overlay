@@ -31,6 +31,26 @@
     return !/^\d{1,2}:\d{2}/.test(text);
   }
 
+  function evaluateOcrResult({ text, confidence }) {
+    const value = String(text || '').trim();
+    const words = value.match(/[A-Za-z]+(?:['-][A-Za-z]+)*/g) || [];
+    const letters = (value.match(/[A-Za-z]/g) || []).length;
+    const symbols = (value.match(/[^A-Za-z0-9\s.,!?;:'"()\-]/g) || []).length;
+    const singleLetters = words.filter(word => word.length === 1).length;
+    const confidenceIsLow = Number.isFinite(confidence) && confidence < 35;
+    const hasShortValidPhrase = /^(?:no|go|wait|run|help|yes)[.!?]?$/i.test(value);
+    const isValid = hasShortValidPhrase || (
+      isLikelySubtitle(value)
+      && words.length > 0
+      && singleLetters / words.length < 0.5
+      && !words.every(word => word.length === 1)
+      && symbols <= Math.max(2, Math.floor(value.length * 0.15))
+      && letters / Math.max(1, value.length) >= 0.55
+      && !confidenceIsLow
+    );
+    return { accepted: isValid, reason: isValid ? 'valid' : confidenceIsLow ? 'low-confidence' : 'artifact' };
+  }
+
   function isSimilarText(a, b) {
     if (a === b) return true;
     if (!a || !b) return false;
@@ -66,6 +86,7 @@
     cleanScreenOcrText,
     normalizeOcrText,
     isLikelySubtitle,
+    evaluateOcrResult,
     isSimilarText,
     isGrowingSubtitle,
     compareSubtitleText

@@ -10,7 +10,22 @@ contextBridge.exposeInMainWorld('overlayApi', {
   dictionaryDelete: (id) => ipcRenderer.invoke('dictionary-delete', id),
   getContextSentences: (word) => ipcRenderer.invoke('get-context-sentences', word),
   exportDictionary: (entries, format) => ipcRenderer.invoke('export-dictionary', entries, format),
-  readScreenSubtitle: () => ipcRenderer.invoke('read-screen-subtitle'),
+  captureScreenSubtitleFrame: () => ipcRenderer.invoke('capture-screen-subtitle-frame'),
+  recognizeScreenSubtitleFrame: (frame) => {
+    const payload = {
+      id: Number(frame?.id),
+      generation: Number(frame?.generation),
+      capturedAt: Number(frame?.capturedAt),
+      imageChanged: Boolean(frame?.imageChanged),
+      forced: Boolean(frame?.forced),
+      image: frame?.image
+    };
+    if (process.env.OCR_DEBUG === '1') {
+      console.debug('[OCR preload]', { keys: Object.keys(payload), constructor: payload.image?.constructor?.name, byteLength: payload.image?.byteLength, id: payload.id, generation: payload.generation });
+    }
+    return ipcRenderer.invoke('recognize-screen-subtitle-frame', payload);
+  },
+  recordOcrMetrics: (metrics) => ipcRenderer.invoke('ocr-debug-metrics', metrics),
   selectOcrArea: () => ipcRenderer.invoke('select-ocr-area'),
   completeOcrArea: (area) => ipcRenderer.invoke('complete-ocr-area', area),
   cancelOcrArea: () => ipcRenderer.invoke('cancel-ocr-area'),

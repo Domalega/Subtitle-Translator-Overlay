@@ -13,7 +13,8 @@ function createOutput() {
     showTranslationPending() { if (!this.translation) this.translation = 'Translating...'; },
     showTranslationError(message) { this.status = message; },
     setStatus(message) { this.status = message; },
-    clear() { this.recognized = ''; this.translation = ''; }
+    clear() { this.recognized = ''; this.translation = ''; },
+    hideOverlay() {}
   };
 }
 
@@ -51,6 +52,8 @@ function createCoordinator(options = {}) {
     stabilizer: options.stabilizer || new SubtitleStabilizer(),
     hasOcrArea: options.hasOcrArea || (() => true),
     readOcr: options.readOcr || (async () => 'Hello, this is a subtitle'),
+    captureFrame: options.captureFrame,
+    recognizeFrame: options.recognizeFrame,
     translate: options.translate || (async () => 'translation'),
     setTimeout: scheduler.setTimeout,
     clearTimeout: scheduler.clearTimeout,
@@ -260,4 +263,111 @@ test('ScreenOcrCoordinator dependency wrappers preserve receiver-sensitive calls
   scheduler.runNext();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(output.translation, 'Hello, this is a subtitle translated');
+});
+
+test('ScreenOcrCoordinator keeps overlay visible for repeated unchanged empty OCR results', async () => {
+  const scheduler = createScheduler();
+  let reads = 0;
+  const output = createOutput();
+  let hideCalls = 0;
+  output.hideOverlay = () => { hideCalls += 1; };
+  const { coordinator } = createCoordinator({
+    scheduler,
+    output,
+    stabilizer: new SubtitleStabilizer({ emptyFrameThreshold: 2 }),
+    readOcr: async () => (reads++ === 0 ? 'Wait!' : '')
+  });
+  await coordinator.readOnce();
+  scheduler.runNext();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await coordinator.readOnce();
+  assert.equal(hideCalls, 0);
+  await coordinator.readOnce();
+  scheduler.runNext();
+  assert.equal(hideCalls, 0);
+});
+
+test('ScreenOcrCoordinator stop hides overlay immediately and stale async work cannot restore it', async () => {
+  let resolveTranslation;
+  const output = createOutput(); let hideCalls = 0;
+  output.hideOverlay = () => { hideCalls += 1; };
+  const { coordinator, scheduler } = createCoordinator({ output, translate: () => new Promise((resolve) => { resolveTranslation = resolve; }) });
+  await coordinator.readOnce(); scheduler.runNext();
+  coordinator.stop('stopped'); resolveTranslation('late');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(hideCalls >= 1);
+  assert.equal(output.translation, 'Translating...');
+});
+
+test('ScreenOcrCoordinator keeps an in-flight translation after a stable-frame hold period', async () => {
+  let resolveTranslation;
+  const output = createOutput(); let hideCalls = 0;
+  output.hideOverlay = () => { hideCalls += 1; };
+  const { coordinator, scheduler } = createCoordinator({ output, translate: () => new Promise((resolve) => { resolveTranslation = resolve; }) });
+  await coordinator.readOnce();
+  scheduler.runNext();
+  scheduler.runNext();
+  resolveTranslation('late');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(hideCalls, 0);
+  assert.equal(output.translation, 'late');
+});
+
+test('ScreenOcrCoordinator confirms absence only after changed empty frame and forced empty check', async () => {
+  const scheduler = createScheduler();
+  const output = createOutput(); let hideCalls = 0;
+  output.hideOverlay = () => { hideCalls += 1; };
+  const { coordinator } = createCoordinator({ scheduler, output });
+  coordinator.processText('Wait!', 80, 0, { imageChanged: true });
+  scheduler.runNext();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  coordinator.processText('', 80, 0, { imageChanged: true });
+  assert.equal(coordinator.subtitleState, 'possible-absent');
+  assert.equal(hideCalls, 0);
+  coordinator.processText('', 80, 0, { forced: true });
+  assert.equal(coordinator.subtitleState, 'absent');
+  assert.equal(hideCalls, 1);
+});
+
+test('unchanged and forced duplicate subtitle results do not route another translation or hide overlay', async () => {
+  const scheduler = createScheduler();
+  const output = createOutput(); let translations = 0; let hideCalls = 0;
+  output.hideOverlay = () => { hideCalls += 1; };
+  const { coordinator } = createCoordinator({ scheduler, output, translate: async () => { translations += 1; return 'translation'; } });
+  coordinator.processText('The subtitle stays visible.', 80, 0, { imageChanged: true });
+  scheduler.runNext();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  for (let index = 0; index < 20; index += 1) coordinator.processText('The subtitle stays visible.', 40 + index, 0, { forced: true });
+  assert.equal(translations, 1);
+  assert.equal(hideCalls, 0);
+  assert.equal(output.translation, 'translation');
+});
+
+test('a substantially lower-confidence OCR candidate cannot replace a translated subtitle', async () => {
+  const scheduler = createScheduler();
+  const output = createOutput(); let translations = 0;
+  const { coordinator } = createCoordinator({ scheduler, output, translate: async () => `translation-${++translations}` });
+  coordinator.processText('A clear subtitle with enough words.', 90, 0, { imageChanged: true });
+  scheduler.runNext();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  coordinator.processText('A different but weak OCR phrase.', 40, 0, { imageChanged: true });
+  assert.equal(translations, 1);
+  assert.equal(output.translation, 'translation-1');
+});
+
+test('a timed out frame releases busy and the latest pending frame is recognized', async () => {
+  let firstReject;
+  let calls = 0;
+  const { coordinator } = createCoordinator({
+    captureFrame: async () => ({ id: ++calls, capturedAt: 0, image: Buffer.alloc(1) }),
+    recognizeFrame: () => calls === 1 ? new Promise((_resolve, reject) => { firstReject = reject; }) : Promise.resolve({ text: 'Second subtitle is valid text', confidence: 80 }),
+    translate: async () => 'translation'
+  });
+  const first = coordinator.capture({ scheduleNext: false, generation: coordinator.generation });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const second = coordinator.capture({ scheduleNext: false, generation: coordinator.generation });
+  firstReject(Object.assign(new Error('timeout'), { code: 'OCR_TIMEOUT' }));
+  await Promise.all([first, second]);
+  assert.equal(coordinator.isBusy, false);
+  assert.equal(calls, 2);
 });

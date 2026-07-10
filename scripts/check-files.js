@@ -22,20 +22,6 @@ if (packageJson.main) {
   checkFile(packageJson.main, rootDir, 'package.json main');
 }
 
-const mainFilePath = path.join(rootDir, packageJson.main || '');
-if (fs.existsSync(mainFilePath)) {
-  const mainSource = readFile(mainFilePath);
-  const loadFilePattern = /loadFile\(path\.join\(__dirname,\s*['"]([^'"]+)['"]\)\)/g;
-  for (const match of mainSource.matchAll(loadFilePattern)) {
-    checkFile(match[1], path.dirname(mainFilePath), 'BrowserWindow.loadFile');
-  }
-
-  const toolWindowPattern = /createToolWindow\(\s*['"]([^'"]+)['"]/g;
-  for (const match of mainSource.matchAll(toolWindowPattern)) {
-    checkFile(match[1], path.dirname(mainFilePath), 'BrowserWindow.loadFile');
-  }
-}
-
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const files = [];
@@ -49,6 +35,21 @@ function walk(dir) {
     }
   }
   return files;
+}
+
+const appFilePath = path.join(rootDir, 'src', 'main', 'app.js');
+if (fs.existsSync(appFilePath)) {
+  const appSource = readFile(appFilePath);
+  const loadFilePattern = /loadFile\(path\.join\(__dirname,\s*([^)]+)\)\)/g;
+  for (const match of appSource.matchAll(loadFilePattern)) {
+    const segments = [...match[1].matchAll(/['"]([^'"]+)['"]/g)].map((part) => part[1]);
+    if (segments.length > 0) checkFile(path.join(...segments), path.dirname(appFilePath), 'BrowserWindow.loadFile');
+  }
+
+  const toolWindowPattern = /createToolWindow\(\s*['"]([^'"]+)['"]/g;
+  for (const match of appSource.matchAll(toolWindowPattern)) {
+    checkFile(path.join('..', match[1]), path.dirname(appFilePath), 'BrowserWindow.loadFile');
+  }
 }
 
 const htmlFiles = walk(path.join(rootDir, 'src')).filter((filePath) => filePath.endsWith('.html'));

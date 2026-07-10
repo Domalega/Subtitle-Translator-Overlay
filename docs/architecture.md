@@ -2,18 +2,18 @@
 
 ## Main Process
 
-`src/main.js` owns Electron windows, global shortcuts, file dialogs, screen capture, Tesseract workers, persisted JSON files, dictionary storage, and network translation calls.
+`src/main.js` is the Electron entry point. `src/main/app.js` owns Electron windows, global shortcuts, file dialogs, screen capture, Tesseract workers, persisted JSON files, dictionary storage, and network translation calls.
 
 Main windows currently loaded by `BrowserWindow.loadFile()` are:
 
-- `index.html`: main overlay window.
-- `settings.html`: settings tool window.
-- `dictionary.html`: dictionary tool window.
-- `select.html`: Screen OCR area selection window.
-- `capture-select.html`: Game mode capture selection window.
-- `translate-window.html`: legacy translation window, kept for a later architecture pass.
-- `near-source-overlay.html`: independent transparent translation-only window.
-- `developer-ocr-zone.html`: transparent, mouse-pass-through diagnostic border outside the saved OCR crop.
+- `src/renderer/main/index.html`: main overlay window.
+- `src/renderer/settings/settings.html`: settings tool window.
+- `src/renderer/dictionary/dictionary.html`: dictionary tool window.
+- `src/renderer/capture/select.html`: Screen OCR area selection window.
+- `src/renderer/capture/capture-select.html`: Game mode capture selection window.
+- `src/legacy/translate-window.html`: legacy translation window, kept for a later architecture pass.
+- `src/renderer/overlays/near-source/near-source-overlay.html`: independent transparent translation-only window.
+- `src/renderer/overlays/developer-zone/developer-ocr-zone.html`: transparent, mouse-pass-through diagnostic border outside the saved OCR crop.
 
 The main process keeps `contextIsolation` enabled and `nodeIntegration` disabled for renderer windows.
 
@@ -25,7 +25,7 @@ The preload contract is intentionally preserved. Existing methods still use `ipc
 
 ## Renderer
 
-`src/renderer.js` owns the main overlay UI wiring. Pure text logic, subtitle stabilization, output rendering, and OCR coordination are separated into browser-loadable modules:
+`src/renderer/main/renderer.js` owns the main overlay UI wiring. Pure text logic, subtitle stabilization, output rendering, and OCR coordination are separated into browser-loadable modules under `src/shared/`:
 
 - `text-utils.js`
 - `subtitle-stabilizer.js`
@@ -47,7 +47,7 @@ These modules do not require Electron and can be tested with `node:test`.
 ## Screen OCR Flow
 
 1. The user selects an OCR area from `Settings`.
-2. `select.html` sends `complete-ocr-area` through preload.
+2. `src/renderer/capture/select.html` sends `complete-ocr-area` through preload.
 3. Main stores the selected OCR area and broadcasts `ocr-area-changed`.
 4. The main overlay enables `Read once` and `Start` behavior through `ScreenOcrCoordinator`.
 5. `ScreenOcrCoordinator` calls `read-screen-subtitle` through preload.
@@ -60,11 +60,11 @@ These modules do not require Electron and can be tested with `node:test`.
 
 The main process creates one reusable `nearSourceWindow`. It is transparent, frameless, always-on-top, taskbar-free, non-resizable, non-focusable, created hidden, and has `contextIsolation: true` and `nodeIntegration: false`. Mouse events are ignored and it is displayed with `showInactive()` only after a renderer measurement.
 
-The overlay renderer uses `textContent`, measures its card on `requestAnimationFrame`, suppresses identical measurements, and returns its size. Main clamps the size and uses `near-source-position.js` to put it below the anchor when possible, otherwise above it. It is hidden on Stop, panel mode, and Game mode; it is closed with the main window.
+The overlay renderer uses `textContent`, measures its card on `requestAnimationFrame`, suppresses identical measurements, and returns its size. Main clamps the size and uses `src/shared/output/near-source-position.js` to put it below the anchor when possible, otherwise above it. It is hidden on Stop, panel mode, and Game mode; it is closed with the main window.
 
 ## Coordinates
 
-`select.js` emits local DIP coordinates inside the primary-display selection window. Existing `ocrArea` remains a physical-pixel crop: main multiplies local coordinates by the primary display `scaleFactor` before `nativeImage.crop()`.
+`src/renderer/capture/select.js` emits local DIP coordinates inside the primary-display selection window. Existing `ocrArea` remains a physical-pixel crop: main multiplies local coordinates by the primary display `scaleFactor` before `nativeImage.crop()`.
 
 `ocrAnchorBoundsDip` is separate: main adds `display.bounds` to local DIP coordinates and uses it only for BrowserWindow placement. BrowserWindow bounds and `display.workArea` are DIP. This stage targets the primary monitor; it does not claim complete multi-monitor or DPI crop support. Without an anchor, near-source mode asks the user to select the OCR area again rather than guessing.
 
@@ -72,7 +72,7 @@ The overlay renderer uses `textContent`, measures its card on `requestAnimationF
 
 1. The user enables `Game mode` in the main window.
 2. Renderer calls `set-game-mode-enabled`.
-3. The global Game mode hotkey opens `capture-select.html`.
+3. The global Game mode hotkey opens `src/renderer/capture/capture-select.html`.
 4. The selected capture area is sent with `complete-capture-translate`.
 5. Main runs Game OCR and translation.
 6. Main sends `capture-result` to the main overlay window.
@@ -102,7 +102,7 @@ Renderer keeps using the existing preload IPC methods. Screen OCR, manual retran
 
 ## Settings Flow
 
-`settings-store.js` defines `DEFAULT_UI_SETTINGS` and `normalizeUiSettings()`.
+`src/shared/settings/settings-store.js` defines `DEFAULT_UI_SETTINGS` and `normalizeUiSettings()`.
 
 Main loads `ui-settings.json`, normalizes missing or invalid fields, preserves unknown legacy fields, and saves updates through a serialized write queue. The settings UI uses `ui-settings.json` as the source of truth. `localStorage` is only a local cache for renderer UI state.
 
@@ -130,7 +130,7 @@ SRT parsing and `open-srt` IPC still exist in code. The current UI does not expo
 
 ## Legacy Translate Window
 
-`translate-window.html` and `translate-window.js` are kept. The current Game mode output is still displayed in the main overlay window and this refactor does not automatically open the translation window.
+`src/legacy/translate-window.html` and `src/legacy/translate-window.js` are kept. The current Game mode output is still displayed in the main overlay window and this refactor does not automatically open the translation window.
 
 ## IPC Directions
 

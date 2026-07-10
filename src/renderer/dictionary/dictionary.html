@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dictionary</title>
+    <link rel="stylesheet" href="../../legacy/tool-window.css" />
+  </head>
+  <body>
+    <main class="toolWindow">
+      <header class="toolTitlebar">
+        <div>
+          <strong>Dictionary</strong>
+          <span>Words added from subtitles</span>
+        </div>
+        <button id="closeWindow" class="windowButton">Close</button>
+      </header>
+
+      <section class="card slimCard splitHeader">
+        <strong>Saved words</strong>
+        <label class="sortControl">
+          Sort
+          <select id="dictionarySort">
+            <option value="date-desc">Newest</option>
+            <option value="date-asc">Oldest</option>
+            <option value="alpha-asc">A-Z</option>
+            <option value="alpha-desc">Z-A</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="searchBar">
+        <input id="dictionarySearch" type="search" placeholder="Search words, translations, dates..." />
+        <button id="studyButton">Study</button>
+        <button id="exportButton">Export</button>
+      </section>
+
+      <section id="dictionaryList" class="dictionaryList"></section>
+
+      <footer class="pager">
+        <button id="dictionaryPrev">Prev</button>
+        <span id="dictionaryPageInfo">Page 1 / 1</span>
+        <button id="dictionaryNext">Next</button>
+      </footer>
+
+      <div id="contextModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Word Context</h2>
+            <button id="closeContextModal" class="windowButton">Close</button>
+          </div>
+          <div id="contextContent" class="modalBody"></div>
+        </div>
+      </div>
+
+      <div id="deleteConfirmModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Confirm Deletion</h2>
+            <button id="closeDeleteConfirmModal" class="windowButton">Cancel</button>
+          </div>
+          <div class="modalBody">
+            <p>Are you sure you want to delete the word "<span id="wordToDelete"></span>"?</p>
+            <div class="modalFooter">
+              <button id="cancelDelete" class="windowButton">Cancel</button>
+              <button id="confirmDelete" class="windowButton deleteButton">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="studyModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Study Mode</h2>
+            <button id="closeStudyModal" class="windowButton">Close</button>
+          </div>
+          <div class="modalBody" style="text-align:center">
+            <div class="studyWord" id="studyWord"></div>
+            <div class="studyTranslation" id="studyTranslation"></div>
+            <div class="studyControls">
+              <button id="showTranslationBtn">Show translation</button>
+              <button id="studyEasyBtn">Easy</button>
+              <button id="studyHardBtn">Hard</button>
+              <button id="studyNextBtn" class="primary">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="exportModal" class="modal">
+        <div class="modalContent">
+          <div class="modalHeader">
+            <h2>Export Dictionary</h2>
+            <button id="closeExportModal" class="windowButton">Close</button>
+          </div>
+          <div class="modalBody" style="text-align:center">
+            <p style="margin-bottom:16px">Choose export format:</p>
+            <div style="display:flex;gap:10px;justify-content:center">
+              <button id="exportCsvBtn" class="primary">Export CSV</button>
+              <button id="exportJsonBtn" class="primary">Export JSON</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="../../shared/utils/dictionary-pagination.js"></script>
+    <script src="dictionary.js"></script>
+  </body>
+</html>

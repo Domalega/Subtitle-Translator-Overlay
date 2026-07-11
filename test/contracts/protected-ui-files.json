@@ -1,0 +1,10 @@
+{
+  "baseline": "a447e7f6a63051459940255c443b3df92c05a24c",
+  "files": {
+    "src/renderer/settings/settings.html": "58c384014cf4e8041787325d0829f557993eddb8",
+    "src/renderer/settings/settings.js": "58dea151773fbbc88c593882e329bbad58a1a721",
+    "src/renderer/dictionary/dictionary.html": "7ceb6c4fbcd7fd372e4f20e8b3ddb4d29bb4e578",
+    "src/renderer/dictionary/dictionary.js": "efccf3979a39e8f13af31f9bcc8ce546d794cb48",
+    "src/legacy/tool-window.css": "d5dfc560aaf8ecdb74fc3747f2b8684312b1ba50"
+  }
+}

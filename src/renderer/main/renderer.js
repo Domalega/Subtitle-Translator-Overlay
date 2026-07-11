@@ -391,6 +391,7 @@ function setDeveloperMode(enabled) {
   developerModeEnabled = enabled;
   saveOcrSampleButton.hidden = !enabled;
   openOcrDiagnosticsButton.hidden = !enabled;
+  document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled } }));
 }
 window.overlayApi.onOcrProgress((event) => {
   if (typeof event === 'number') { if (isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${event}%`; return; }

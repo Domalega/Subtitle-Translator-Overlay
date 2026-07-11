@@ -9,7 +9,12 @@
   "scripts": {
     "start": "electron .",
     "check:files": "node scripts/check-files.js",
-    "test": "node --test",
+    "check:ui": "node scripts/check-ui-contract.js && node scripts/check-protected-ui.js",
+    "test": "node --test test/unit/**/*.test.js",
+    "test:ui": "node test/integration/ui-windows-smoke.js",
+    "check:js": "node scripts/check-js.js",
+    "verify": "npm run check:files && npm run check:ui && npm test && npm run test:ui && npm run check:js && git diff --check",
+    "prebuild": "npm run verify",
     "build": "electron-builder --win portable",
     "dist": "electron-builder --win"
   },

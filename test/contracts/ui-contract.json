@@ -1,0 +1,39 @@
+{
+  "settings": {
+    "html": "src/renderer/settings/settings.html",
+    "css": ["../../legacy/tool-window.css"],
+    "js": ["settings.js"],
+    "elements": {
+      "closeWindow": "button", "selectOcrArea": "button", "developerModeToggle": "checkbox",
+      "displayMode": "select", "nearSourcePlacement": "select", "nearSourceVerticalOffset": "range",
+      "nearSourceFontSize": "range", "nearSourceBackgroundOpacity": "range", "nearSourceMaxWidth": "range",
+      "nearSourceMaxLines": "range", "themeSelect": "select", "fontSelect": "select",
+      "fontScale": "range", "windowWidth": "range", "windowHeight": "range", "gameHotkey": "text",
+      "deleteConfirmToggle": "checkbox", "contextCountSelect": "select", "resetDefaults": "button"
+    }
+  },
+  "dictionary": {
+    "html": "src/renderer/dictionary/dictionary.html",
+    "css": ["../../legacy/tool-window.css"],
+    "js": ["../../shared/utils/dictionary-pagination.js", "dictionary.js"],
+    "elements": {
+      "closeWindow": "button", "dictionarySort": "select", "dictionarySearch": "search",
+      "studyButton": "button", "exportButton": "button", "dictionaryList": "section",
+      "dictionaryPrev": "button", "dictionaryPageInfo": "span", "dictionaryNext": "button",
+      "contextModal": "div", "contextContent": "div", "closeContextModal": "button",
+      "deleteConfirmModal": "div", "closeDeleteConfirmModal": "button", "cancelDelete": "button",
+      "confirmDelete": "button", "studyModal": "div", "closeStudyModal": "button",
+      "exportModal": "div", "closeExportModal": "button", "exportCsvBtn": "button", "exportJsonBtn": "button"
+    }
+  },
+  "main": {
+    "html": "src/renderer/main/index.html",
+    "css": ["styles.css"],
+    "js": ["../../shared/ocr/text-utils.js", "../../shared/ocr/subtitle-stabilizer.js", "../../shared/output/main-panel-output.js", "../../shared/output/near-source-output.js", "../../shared/output/output-router.js", "../../shared/ocr/latest-frame-queue.js", "../../shared/ocr/screen-ocr-coordinator.js", "renderer.js", "subtitle-area-detection-controller.js"],
+    "elements": {
+      "playPause": "button", "ocrOnce": "button", "addWord": "button", "dictionaryOpen": "button",
+      "settingsToggle": "button", "focusToggle": "button", "gameModeToggle": "button",
+      "saveOcrSample": "button", "openOcrDiagnostics": "button", "findSubtitleArea": "button"
+    }
+  }
+}

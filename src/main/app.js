@@ -8,12 +8,21 @@ const { cleanScreenOcrText } = require('../shared/ocr/text-utils');
 const { OcrWorkerService } = require('./services/ocr-worker-service');
 const { calculateCropBounds } = require('../shared/ocr/crop-bounds');
 const { FrameChangeDetector } = require('../shared/ocr/frame-change-detector');
+const { detectSubtitleArea } = require('../shared/ocr/subtitle-area-detector');
 const { OcrMetrics } = require('./services/ocr-metrics');
 const { TranslationService } = require('./services/translation-service');
 const { OcrDiagnosticSampleService } = require('./services/ocr-diagnostic-sample-service');
 const { DEFAULT_UI_SETTINGS, normalizeUiSettings } = require('../shared/settings/settings-store');
 const { calculateNearSourceBounds } = require('../shared/output/near-source-position');
 
+const UI_SMOKE = process.env.UI_SMOKE === '1';
+if (UI_SMOKE) app.setPath('userData', path.join(require('node:os').tmpdir(), `subtitle-overlay-ui-smoke-${process.pid}`));
+if (UI_SMOKE) {
+  process.on('uncaughtException', (error) => {
+    console.error('UI smoke uncaught exception:', error.stack || error.message);
+    app.exit(1);
+  });
+}
 app.disableHardwareAcceleration();
 const singleInstanceLock = app.requestSingleInstanceLock();
 
@@ -25,14 +34,22 @@ let captureWindow;
 let translateWindow;
 let nearSourceWindow;
 let developerOcrZoneWindow;
+let developerSubtitleCandidateWindow;
 let gameOcrWorkerPromise;
 let ocrArea = null;
 let ocrAnchorBoundsDip = null;
 let nearSourceContent = null;
 let nearSourceSettings = normalizeUiSettings(DEFAULT_UI_SETTINGS);
+let detectedSubtitleBoundsDip = null;
+let subtitleDetectionBusy = false;
 
 function developerZoneColor(theme) {
   return ({ green: '#41d17c', blue: '#4ca8ff', purple: '#b07cff', dark: '#d7dce2', nothing: '#222222', 'nothing-dark': '#eeeeee', 'nothing-os-light': '#222222', 'nothing-os-dark': '#eeeeee' })[theme] || '#41d17c';
+}
+
+function excludeWindowFromScreenCapture(window) {
+  // Electron 31 uses WDA_EXCLUDEFROMCAPTURE on supported Windows versions.
+  try { window.setContentProtection(true); } catch (_) {}
 }
 
 function sendDeveloperStatus(stage, details = {}) {
@@ -50,6 +67,7 @@ function updateDeveloperOcrZone(settings = loadUiSettings()) {
   if (!developerOcrZoneWindow || developerOcrZoneWindow.isDestroyed()) {
     developerOcrZoneWindow = new BrowserWindow({ ...bounds, transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, show: false, webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false } });
     developerOcrZoneWindow.setAlwaysOnTop(true, 'screen-saver');
+    excludeWindowFromScreenCapture(developerOcrZoneWindow);
     developerOcrZoneWindow.setIgnoreMouseEvents(true);
     developerOcrZoneWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-ocr-zone.html'));
     developerOcrZoneWindow.webContents.once('did-finish-load', () => { developerOcrZoneWindow?.webContents.send('developer-ocr-zone-theme', developerZoneColor(settings.theme)); developerOcrZoneWindow?.showInactive(); });
@@ -59,6 +77,51 @@ function updateDeveloperOcrZone(settings = loadUiSettings()) {
     developerOcrZoneWindow.webContents.send('developer-ocr-zone-theme', developerZoneColor(settings.theme));
     if (!developerOcrZoneWindow.isVisible()) developerOcrZoneWindow.showInactive();
   }
+}
+
+function updateDeveloperSubtitleCandidateZone(settings = loadUiSettings()) {
+  if (settings.developerMode !== true) {
+    if (developerSubtitleCandidateWindow && !developerSubtitleCandidateWindow.isDestroyed()) developerSubtitleCandidateWindow.close();
+    return;
+  }
+  if (!detectedSubtitleBoundsDip) {
+    if (developerSubtitleCandidateWindow && !developerSubtitleCandidateWindow.isDestroyed()) developerSubtitleCandidateWindow.hide();
+    return;
+  }
+  const border = 2;
+  const bounds = {
+    x: Math.round(detectedSubtitleBoundsDip.x - border),
+    y: Math.round(detectedSubtitleBoundsDip.y - border),
+    width: Math.max(1, Math.round(detectedSubtitleBoundsDip.width + border * 2)),
+    height: Math.max(1, Math.round(detectedSubtitleBoundsDip.height + border * 2))
+  };
+  if (!developerSubtitleCandidateWindow || developerSubtitleCandidateWindow.isDestroyed()) {
+    developerSubtitleCandidateWindow = new BrowserWindow({ ...bounds, transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, show: false, webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+    developerSubtitleCandidateWindow.setAlwaysOnTop(true, 'screen-saver');
+    excludeWindowFromScreenCapture(developerSubtitleCandidateWindow);
+    developerSubtitleCandidateWindow.setIgnoreMouseEvents(true);
+    developerSubtitleCandidateWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-subtitle-candidate.html'));
+    developerSubtitleCandidateWindow.webContents.once('did-finish-load', () => { developerSubtitleCandidateWindow?.webContents.send('developer-subtitle-candidate-state', { visible: true }); developerSubtitleCandidateWindow?.showInactive(); });
+    developerSubtitleCandidateWindow.on('closed', () => { developerSubtitleCandidateWindow = null; });
+  } else {
+    developerSubtitleCandidateWindow.setBounds(bounds);
+    if (!developerSubtitleCandidateWindow.isVisible()) developerSubtitleCandidateWindow.showInactive();
+  }
+}
+
+function displayForSubtitleDetection() {
+  return ocrAnchorBoundsDip ? screen.getDisplayMatching(ocrAnchorBoundsDip) : screen.getPrimaryDisplay();
+}
+
+function subtitleCandidateBoundsDip(candidate, imageSize, display) {
+  const scaleX = display.size.width / imageSize.width;
+  const scaleY = display.size.height / imageSize.height;
+  return {
+    x: display.bounds.x + candidate.x * scaleX,
+    y: display.bounds.y + candidate.y * scaleY,
+    width: candidate.width * scaleX,
+    height: candidate.height * scaleY
+  };
 }
 let gameOcrBusy = false;
 let gameModeEnabled = false;
@@ -213,6 +276,8 @@ function createToolWindow(fileName, title, width, height) {
     resizable: true,
     title,
     parent: mainWindow,
+    show: !UI_SMOKE,
+    paintWhenInitiallyHidden: UI_SMOKE,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
@@ -323,6 +388,7 @@ function createNearSourceWindow() {
     }
   });
   nearSourceWindow.setAlwaysOnTop(true, 'screen-saver');
+  excludeWindowFromScreenCapture(nearSourceWindow);
   nearSourceWindow.setIgnoreMouseEvents(true);
   nearSourceWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'near-source', 'near-source-overlay.html'));
   nearSourceWindow.webContents.once('did-finish-load', sendNearSourceState);
@@ -488,6 +554,8 @@ function createWindow() {
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: false,
+    show: !UI_SMOKE,
+    paintWhenInitiallyHidden: UI_SMOKE,
     title: 'Subtitle Translation Overlay',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -497,11 +565,13 @@ function createWindow() {
   });
 
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  excludeWindowFromScreenCapture(mainWindow);
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'main', 'index.html'));
 
   mainWindow.on('closed', () => {
     if (nearSourceWindow && !nearSourceWindow.isDestroyed()) nearSourceWindow.close();
     if (developerOcrZoneWindow && !developerOcrZoneWindow.isDestroyed()) developerOcrZoneWindow.close();
+    if (developerSubtitleCandidateWindow && !developerSubtitleCandidateWindow.isDestroyed()) developerSubtitleCandidateWindow.close();
     nearSourceWindow = null;
     mainWindow = null;
     globalShortcut.unregisterAll();
@@ -553,7 +623,102 @@ function createWindow() {
   }
   updateNearSourceSettings(uiSettings);
   updateDeveloperOcrZone(uiSettings);
+  updateDeveloperSubtitleCandidateZone(uiSettings);
   registerGameHotkey(uiSettings.hotkey || 'CommandOrControl+Shift+T');
+}
+
+async function runUiSmokeTest() {
+  console.log('UI smoke test: loading windows.');
+  const failures = [];
+  const reportFailure = (message) => failures.push(message);
+  const evaluate = (window, source, name) => Promise.race([
+    window.webContents.executeJavaScript(source),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} evaluation timed out`)), 5000))
+  ]);
+  const watchWindow = (window, name) => {
+    window.webContents.on('did-fail-load', (_event, code, description, url) => reportFailure(`${name} failed to load ${url}: ${code} ${description}`));
+    window.webContents.on('render-process-gone', (_event, details) => reportFailure(`${name} renderer exited: ${details.reason}`));
+    window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      if (level >= 3) reportFailure(`${name} console error at ${sourceId}:${line}: ${message}`);
+    });
+  };
+  try {
+    watchWindow(mainWindow, 'main');
+    mainWindow.setPosition(-10000, -10000);
+    mainWindow.showInactive();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    console.log('UI smoke test: main window checked.');
+    settingsWindow = createToolWindow('renderer/settings/settings.html', 'Settings', 560, 760);
+    dictionaryWindow = createToolWindow('renderer/dictionary/dictionary.html', 'Dictionary', 720, 620);
+    // Off-screen windows receive native control layout without appearing to the user.
+    for (const window of [settingsWindow, dictionaryWindow]) {
+      window.setPosition(-10000, -10000);
+      window.showInactive();
+    }
+    developerOcrZoneWindow = new BrowserWindow({
+      width: 120,
+      height: 80,
+      show: false,
+      paintWhenInitiallyHidden: true,
+      frame: false,
+      webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false }
+    });
+    developerOcrZoneWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-ocr-zone.html'));
+    watchWindow(settingsWindow, 'settings');
+    watchWindow(dictionaryWindow, 'dictionary');
+    if (developerOcrZoneWindow) watchWindow(developerOcrZoneWindow, 'developer overlay');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    console.log('UI smoke test: tool windows checked.');
+
+    const mainResult = await evaluate(mainWindow, `(() => {
+      const ids = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle', 'findSubtitleArea'];
+      document.getElementById('playPause').click();
+      document.getElementById('playPause').click();
+      document.getElementById('ocrOnce').click();
+      return { missing: ids.filter((id) => !document.getElementById(id)), preload: Boolean(window.overlayApi), enabled: ids.filter((id) => document.getElementById(id)?.disabled) };
+    })()`, 'main');
+    if (mainResult.missing.length || !mainResult.preload || mainResult.enabled.length) reportFailure(`main controls failed: ${JSON.stringify(mainResult)}`);
+
+    const settingsResult = await evaluate(settingsWindow, `new Promise((resolve) => setTimeout(() => {
+      const displayMode = document.getElementById('displayMode');
+      displayMode.value = 'both'; displayMode.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelectorAll('.accordionHeader').forEach((header) => {
+        if (!header.classList.contains('open')) header.click();
+      });
+      const checkboxes = [...document.querySelectorAll('input[type="checkbox"]')];
+      const ranges = [...document.querySelectorAll('input[type="range"]')];
+      const select = document.getElementById('themeSelect');
+      select.value = 'blue'; select.dispatchEvent(new Event('change', { bubbles: true }));
+      const visible = [...checkboxes, ...ranges].every((element) => getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden');
+      const sized = [...checkboxes, ...ranges].every((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0);
+      setTimeout(() => resolve({ checkboxes: checkboxes.length, ranges: ranges.length, visible, sized, theme: document.body.dataset.theme, enabled: !document.getElementById('resetDefaults').disabled }), 100);
+    }, 50))`, 'settings');
+    if (!settingsResult.checkboxes || !settingsResult.ranges || !settingsResult.visible || !settingsResult.sized || settingsResult.theme !== 'blue' || !settingsResult.enabled) reportFailure(`Settings controls failed: ${JSON.stringify(settingsResult)}`);
+
+    const appliedTheme = await evaluate(mainWindow, `document.querySelector('.panel').dataset.theme`, 'main theme');
+    if (appliedTheme !== 'blue') reportFailure(`main theme did not change: ${appliedTheme}`);
+
+    const dictionaryResult = await evaluate(dictionaryWindow, `(() => {
+      const list = document.getElementById('dictionaryList');
+      const sort = document.getElementById('dictionarySort');
+      sort.value = 'alpha-asc'; sort.dispatchEvent(new Event('change', { bubbles: true }));
+      document.getElementById('dictionaryNext').click();
+      const rect = list?.getBoundingClientRect();
+      return { list: Boolean(list), context: Boolean(document.getElementById('contextContent')), visible: rect?.width > 0 && rect?.height > 0, sort: sort.value };
+    })()`, 'dictionary');
+    if (!dictionaryResult.list || !dictionaryResult.context || !dictionaryResult.visible || dictionaryResult.sort !== 'alpha-asc') reportFailure(`Dictionary controls failed: ${JSON.stringify(dictionaryResult)}`);
+  } catch (error) {
+    reportFailure(error.stack || error.message);
+  }
+  setTimeout(() => {
+    if (failures.length) {
+      console.error(`UI smoke test failed:\n${failures.map((failure) => `- ${failure}`).join('\n')}`);
+      app.exit(1);
+    } else {
+      console.log('UI smoke test passed.');
+      app.exit(0);
+    }
+  }, 100);
 }
 
 function restoreMainWindow() {
@@ -591,6 +756,11 @@ if (!singleInstanceLock) {
 
   app.whenReady().then(() => {
     createWindow();
+    if (UI_SMOKE) {
+      console.log('UI smoke test: app ready.');
+      runUiSmokeTest();
+      return;
+    }
     screenOcrWorker.initialize().catch((error) => {
       if (process.env.OCR_DEBUG === '1') console.debug('[OCR] worker warm-up failed:', error.message);
     });
@@ -671,7 +841,10 @@ ipcMain.handle('set-ui-setting', async (_event, key, value) => {
   const normalized = normalizeUiSettings(settings);
   await saveUiSettings(normalized);
   updateNearSourceSettings(normalized);
-  if (key === 'developerMode' || key === 'theme') updateDeveloperOcrZone(normalized);
+  if (key === 'developerMode' || key === 'theme') {
+    updateDeveloperOcrZone(normalized);
+    updateDeveloperSubtitleCandidateZone(normalized);
+  }
   if (!['overlay', 'both'].includes(normalized.displayMode)) hideNearSourceOverlay();
   const appliedValue = normalized[key];
   mainWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
@@ -991,6 +1164,51 @@ ipcMain.handle('open-ocr-diagnostics-folder', async () => {
     return (await shell.openPath(ocrDiagnosticSamples.diagnosticsPath())) === '';
   } catch (_) {
     return false;
+  }
+});
+
+ipcMain.handle('find-subtitle-area', async () => {
+  if (loadUiSettings().developerMode !== true) return { ok: false, error: 'DEVELOPER_MODE_DISABLED' };
+  if (subtitleDetectionBusy) return { ok: false, error: 'DETECTION_BUSY' };
+  subtitleDetectionBusy = true;
+  const actionStartedAt = performance.now();
+  try {
+    const display = displayForSubtitleDetection();
+    const scale = display.scaleFactor || 1;
+    const captureStartedAt = performance.now();
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }
+    });
+    const captureMs = performance.now() - captureStartedAt;
+    const source = sources.find((entry) => entry.display_id === String(display.id)) || sources[0];
+    if (!source) {
+      detectedSubtitleBoundsDip = null;
+      updateDeveloperSubtitleCandidateZone();
+      sendDeveloperStatus('Detection: not found');
+      return { ok: true, found: false, metrics: { captureMs, detectorMs: null, totalMs: performance.now() - actionStartedAt } };
+    }
+    const imageSize = source.thumbnail.getSize();
+    const result = detectSubtitleArea({ width: imageSize.width, height: imageSize.height, data: source.thumbnail.toBitmap(), pixelOrder: 'bgra' });
+    const totalMs = performance.now() - actionStartedAt;
+    if (!result.found) {
+      detectedSubtitleBoundsDip = null;
+      updateDeveloperSubtitleCandidateZone();
+      sendDeveloperStatus(`Detection: not found (${Math.round(result.metrics.durationMs)} ms, ${result.candidates.length} candidates)`);
+      return { ok: true, found: false, metrics: { captureMs, detectorMs: result.metrics.durationMs, totalMs, candidates: 0 } };
+    }
+    detectedSubtitleBoundsDip = subtitleCandidateBoundsDip(result.bestCandidate, imageSize, display);
+    updateDeveloperSubtitleCandidateZone();
+    const candidate = result.bestCandidate;
+    sendDeveloperStatus(`Detection: found score ${candidate.score}, confidence ${candidate.confidence}, ${Math.round(candidate.width)}x${Math.round(candidate.height)}, ${Math.round(result.metrics.durationMs)} ms, ${result.candidates.length} candidates`);
+    return { ok: true, found: true, metrics: { captureMs, detectorMs: result.metrics.durationMs, totalMs, candidates: result.candidates.length } };
+  } catch (error) {
+    detectedSubtitleBoundsDip = null;
+    updateDeveloperSubtitleCandidateZone();
+    sendDeveloperStatus('Detection: not found');
+    return { ok: false, error: 'DETECTION_FAILED' };
+  } finally {
+    subtitleDetectionBusy = false;
   }
 });
 

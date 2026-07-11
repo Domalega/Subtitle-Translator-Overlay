@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('overlayApi', {
   recordOcrDiagnosticUpdate: (update) => ipcRenderer.invoke('record-ocr-diagnostic-update', update),
   saveOcrDiagnosticSample: () => ipcRenderer.invoke('save-ocr-diagnostic-sample'),
   openOcrDiagnosticsFolder: () => ipcRenderer.invoke('open-ocr-diagnostics-folder'),
+  findSubtitleArea: () => ipcRenderer.invoke('find-subtitle-area'),
   selectOcrArea: () => ipcRenderer.invoke('select-ocr-area'),
   completeOcrArea: (area) => ipcRenderer.invoke('complete-ocr-area', area),
   cancelOcrArea: () => ipcRenderer.invoke('cancel-ocr-area'),
@@ -95,6 +96,9 @@ contextBridge.exposeInMainWorld('overlayApi', {
   },
   onDeveloperOcrZoneTheme: (callback) => {
     ipcRenderer.on('developer-ocr-zone-theme', (_event, color) => callback(color));
+  },
+  onDeveloperSubtitleCandidateState: (callback) => {
+    ipcRenderer.on('developer-subtitle-candidate-state', (_event, state) => callback(state));
   },
   onDeveloperStatus: (callback) => {
     ipcRenderer.on('developer-status', (_event, event) => callback(event));

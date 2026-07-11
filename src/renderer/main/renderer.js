@@ -5,6 +5,8 @@ const dictionaryOpenButton = document.getElementById('dictionaryOpen');
 const focusToggleButton = document.getElementById('focusToggle');
 const gameModeToggleButton = document.getElementById('gameModeToggle');
 const settingsToggleButton = document.getElementById('settingsToggle');
+const saveOcrSampleButton = document.getElementById('saveOcrSample');
+const openOcrDiagnosticsButton = document.getElementById('openOcrDiagnostics');
 const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
 const russianTextElement = document.getElementById('russianText');
@@ -214,7 +216,7 @@ const outputRouter = new OutputRouter({ mainOutput: mainPanelOutput, nearSourceO
 const screenOcrCoordinator = new ScreenOcrCoordinator({
   output: outputRouter,
   stabilizer: new SubtitleStabilizer({ emptyFrameThreshold: EMPTY_FRAME_THRESHOLD }),
-  captureFrame: () => window.overlayApi.captureScreenSubtitleFrame(),
+  captureFrame: (_generation, options) => window.overlayApi.captureScreenSubtitleFrame(options?.captureMode),
   recognizeFrame: (frame) => window.overlayApi.recognizeScreenSubtitleFrame(frame),
   translate: (text, options) => translate(text, options),
   hasOcrArea: () => hasOcrArea,
@@ -228,6 +230,7 @@ const screenOcrCoordinator = new ScreenOcrCoordinator({
   setTimeout: (callback, delay) => window.setTimeout(callback, delay),
   clearTimeout: (timerId) => window.clearTimeout(timerId),
   onMetrics: (metrics) => window.overlayApi.recordOcrMetrics(metrics),
+  onDiagnosticUpdate: (update) => window.overlayApi.recordOcrDiagnosticUpdate(update),
   ocrIntervalMs,
   candidateTimeoutMs: CANDIDATE_TIMEOUT_MS,
   holdClearMs: HOLD_CLEAR_MS
@@ -241,10 +244,17 @@ ocrOnceButton.addEventListener('click', () => screenOcrCoordinator.readOnce());
 addWordButton.addEventListener('click', addSelectedWord);
 dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDictionaryWindow());
 settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
+saveOcrSampleButton.addEventListener('click', async () => {
+  const result = await window.overlayApi.saveOcrDiagnosticSample();
+  statusElement.textContent = result?.ok ? 'OCR sample saved' : result?.error === 'NO_COMPLETED_OCR_SAMPLE' ? 'No completed OCR sample' : 'Failed to save OCR sample';
+});
+openOcrDiagnosticsButton.addEventListener('click', async () => {
+  if (!await window.overlayApi.openOcrDiagnosticsFolder()) statusElement.textContent = 'Failed to save OCR sample';
+});
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
   if (key === 'displayMode') outputRouter.setDisplayMode(value);
-  if (key === 'developerMode') developerModeEnabled = value === true;
+  if (key === 'developerMode') setDeveloperMode(value === true);
   if (key.startsWith('nearSource')) nearSourceOutput.setSettings({ [key]: value });
   if (key === 'fontScale') {
     document.documentElement.style.setProperty('--font-scale', `${Number(value) / 100}`);
@@ -263,7 +273,7 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
 window.overlayApi.onApplyUiSettings((settings) => {
   outputRouter.setDisplayMode(settings.displayMode);
-  developerModeEnabled = settings.developerMode === true;
+  setDeveloperMode(settings.developerMode === true);
   nearSourceOutput.setSettings(settings);
   if (settings.fontScale) document.documentElement.style.setProperty('--font-scale', `${Number(settings.fontScale) / 100}`);
   if (settings.theme) { panel.dataset.theme = settings.theme; localStorage.setItem('subtitle-overlay-theme', settings.theme); }
@@ -303,7 +313,7 @@ async function loadInitSettings() {
       window.overlayApi.setWindowSize(Number(s.windowWidth), Number(s.windowHeight));
     }
     outputRouter.setDisplayMode(s.displayMode);
-    developerModeEnabled = s.developerMode === true;
+    setDeveloperMode(s.developerMode === true);
     nearSourceOutput.setSettings(s);
   } catch (_) {}
 }
@@ -377,6 +387,11 @@ window.overlayApi.onStopOcr(() => stopOcr('Screen OCR stopped by Ctrl+Shift+S'))
 
 let activeOcrProgressRequest = null;
 let developerModeEnabled = false;
+function setDeveloperMode(enabled) {
+  developerModeEnabled = enabled;
+  saveOcrSampleButton.hidden = !enabled;
+  openOcrDiagnosticsButton.hidden = !enabled;
+}
 window.overlayApi.onOcrProgress((event) => {
   if (typeof event === 'number') { if (isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${event}%`; return; }
   if (event?.type === 'started') activeOcrProgressRequest = `${event.generation}:${event.requestId}`;

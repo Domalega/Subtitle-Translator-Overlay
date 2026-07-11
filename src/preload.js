@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('overlayApi', {
   dictionaryDelete: (id) => ipcRenderer.invoke('dictionary-delete', id),
   getContextSentences: (word) => ipcRenderer.invoke('get-context-sentences', word),
   exportDictionary: (entries, format) => ipcRenderer.invoke('export-dictionary', entries, format),
-  captureScreenSubtitleFrame: () => ipcRenderer.invoke('capture-screen-subtitle-frame'),
+  captureScreenSubtitleFrame: (captureMode) => ipcRenderer.invoke('capture-screen-subtitle-frame', captureMode === 'manual' ? 'manual' : 'automatic'),
   recognizeScreenSubtitleFrame: (frame) => {
     const payload = {
       id: Number(frame?.id),
@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('overlayApi', {
     return ipcRenderer.invoke('recognize-screen-subtitle-frame', payload);
   },
   recordOcrMetrics: (metrics) => ipcRenderer.invoke('ocr-debug-metrics', metrics),
+  recordOcrDiagnosticUpdate: (update) => ipcRenderer.invoke('record-ocr-diagnostic-update', update),
+  saveOcrDiagnosticSample: () => ipcRenderer.invoke('save-ocr-diagnostic-sample'),
+  openOcrDiagnosticsFolder: () => ipcRenderer.invoke('open-ocr-diagnostics-folder'),
   selectOcrArea: () => ipcRenderer.invoke('select-ocr-area'),
   completeOcrArea: (area) => ipcRenderer.invoke('complete-ocr-area', area),
   cancelOcrArea: () => ipcRenderer.invoke('cancel-ocr-area'),

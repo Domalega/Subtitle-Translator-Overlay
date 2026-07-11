@@ -15,6 +15,7 @@
       this.hasOcrArea = options.hasOcrArea;
       this.onRunningChange = options.onRunningChange || (() => {});
       this.onMetrics = options.onMetrics || (() => {});
+      this.onDiagnosticUpdate = options.onDiagnosticUpdate || (() => {});
       this.getCachedTranslation = options.getCachedTranslation || (() => null);
       this.setCachedTranslation = options.setCachedTranslation || (() => {});
       this.setTimeout = options.setTimeout || ((callback, delay) => globalThis.setTimeout(callback, delay));
@@ -99,7 +100,7 @@
       }
       this.captureBusy = true;
       try {
-        const frame = await this.captureFrame(generation);
+        const frame = await this.captureFrame(generation, { captureMode: scheduleNext ? 'automatic' : 'manual' });
         this.log('frame captured', { generation, frameId: frame?.id });
         if (generation !== this.generation) return;
         if (!frame) { this.skippedUnchangedFrames += 1; this.log('frame skipped', { generation, reason: 'unchanged' }); }
@@ -188,6 +189,7 @@
         this.stabilizer.candidateNormalizedText = this.stabilizer.lastAcceptedText;
         this.stabilizer.candidateCount = 0;
         this.log('quality filter rejected', { reason: 'quality-regression', textLength: String(text || '').length, confidence });
+        this.onDiagnosticUpdate({ frameId: metrics.frameId, decision: { accepted: false, reason: 'quality-regression', normalizedText: result.normalizedText } });
         return;
       }
       this.log('quality filter ' + (['artifact', 'low-confidence', 'empty'].includes(result.reason) ? 'rejected' : 'accepted'), { reason: result.reason, textLength: String(text || '').length, confidence });
@@ -196,6 +198,7 @@
 
     handleStabilizerResult(result, generation, metrics = {}, startedAt = this.now()) {
       const diagnostic = { ...metrics, stabilizationMs: this.now() - startedAt, stabilizerDecision: result.reason };
+      this.onDiagnosticUpdate({ frameId: metrics.frameId, decision: { accepted: result.candidate, reason: result.reason, normalizedText: result.normalizedText } });
       this.log('stabilizer ' + (result.candidate ? 'accepted' : 'rejected'), { reason: result.reason });
       this.onMetrics(diagnostic);
       if (!result.candidate) {
@@ -216,6 +219,7 @@
           if (!accepted.accepted) return;
           this.lastGoodEnglish = accepted.rawText;
           this.lastAcceptedConfidence = metrics.confidence;
+        this.onDiagnosticUpdate({ frameId: metrics.frameId, decision: { accepted: true, reason: accepted.reason, normalizedText: accepted.normalizedText } });
         this.translateAccepted(accepted.normalizedText, accepted.rawText, generation, diagnostic);
         this.output.setStatus('Screen OCR: subtitle queued for translation');
       }, this.candidateTimeoutMs);
@@ -247,12 +251,14 @@
       const requestId = ++this.translationRequestId;
       this.log('translation started', { generation, requestId, textLength: displayText.length });
       const translatedAt = this.now();
+      this.onDiagnosticUpdate({ frameId: metrics.frameId, translation: { requested: true, completed: false, durationMs: null } });
       const cached = this.getCachedTranslation(normalizedKey);
-      if (cached) { if (generation === this.generation && normalizedKey === this.latestTranslationKey) { this.output.showTranslation(cached); this.log('translation completed', { generation, requestId, cached: true }); this.lastGoodRussian = cached; this.output.setStatus('Screen OCR: subtitle translated'); this.onMetrics({ ...metrics, translationMs: 0, acceptedToDisplayedMs: this.now() - translatedAt, totalMs: metrics.capturedAt ? this.now() - metrics.capturedAt : undefined }); } return; }
+      if (cached) { if (generation === this.generation && normalizedKey === this.latestTranslationKey) { this.output.showTranslation(cached); this.log('translation completed', { generation, requestId, cached: true }); this.lastGoodRussian = cached; this.output.setStatus('Screen OCR: subtitle translated'); this.onDiagnosticUpdate({ frameId: metrics.frameId, translation: { requested: true, completed: true, durationMs: 0 } }); this.onMetrics({ ...metrics, translationMs: 0, acceptedToDisplayedMs: this.now() - translatedAt, totalMs: metrics.capturedAt ? this.now() - metrics.capturedAt : undefined }); } return; }
       try {
         const translation = await this.translate(displayText, { scope: 'screen-ocr' });
         if (generation !== this.generation || requestId !== this.translationRequestId || normalizedKey !== this.latestTranslationKey) return;
         this.output.showTranslation(translation); this.log('translation completed', { generation, requestId, cached: false }); this.lastGoodRussian = translation; this.setCachedTranslation(normalizedKey, translation); this.output.setStatus('Screen OCR: subtitle translated');
+        this.onDiagnosticUpdate({ frameId: metrics.frameId, translation: { requested: true, completed: true, durationMs: this.now() - translatedAt } });
         this.onMetrics({ ...metrics, translationMs: this.now() - translatedAt, acceptedToDisplayedMs: this.now() - translatedAt, totalMs: metrics.capturedAt ? this.now() - metrics.capturedAt : undefined });
       } catch (error) { if (generation === this.generation && requestId === this.translationRequestId && error?.code !== 'ABORTED' && error?.code !== 'STALE') this.output.showTranslationError('Translation failed'); }
     }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, globalShortcut, desktopCapturer, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, globalShortcut, desktopCapturer, nativeImage, screen, shell } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -10,6 +10,7 @@ const { calculateCropBounds } = require('../shared/ocr/crop-bounds');
 const { FrameChangeDetector } = require('../shared/ocr/frame-change-detector');
 const { OcrMetrics } = require('./services/ocr-metrics');
 const { TranslationService } = require('./services/translation-service');
+const { OcrDiagnosticSampleService } = require('./services/ocr-diagnostic-sample-service');
 const { DEFAULT_UI_SETTINGS, normalizeUiSettings } = require('../shared/settings/settings-store');
 const { calculateNearSourceBounds } = require('../shared/output/near-source-position');
 
@@ -78,6 +79,18 @@ const screenOcrWorker = new OcrWorkerService({
 });
 const frameChangeDetector = new FrameChangeDetector();
 let screenFrameId = 0;
+const ocrDiagnosticSamples = new OcrDiagnosticSampleService({ getUserDataPath: () => app.getPath('userData'), getAppVersion: () => app.getVersion() });
+const pendingDiagnosticFrames = new Map();
+
+function rememberDiagnosticFrame(frameId, sourceImage, captureMode, display) {
+  pendingDiagnosticFrames.set(frameId, {
+    sourceImage: Buffer.from(sourceImage),
+    captureMode,
+    ocrArea: ocrArea ? { ...ocrArea } : null,
+    screen: { width: display.size.width, height: display.size.height, scaleFactor: display.scaleFactor || 1 }
+  });
+  while (pendingDiagnosticFrames.size > 2) pendingDiagnosticFrames.delete(pendingDiagnosticFrames.keys().next().value);
+}
 
 function dictionaryFilePath() {
   return path.join(app.getPath('userData'), 'dictionary.json');
@@ -847,7 +860,7 @@ ipcMain.handle('export-dictionary', async (_event, entries, format) => {
   return true;
 });
 
-ipcMain.handle('capture-screen-subtitle-frame', async () => {
+ipcMain.handle('capture-screen-subtitle-frame', async (_event, captureMode) => {
   if (!ocrArea) return null;
   const capturedAt = performance.now();
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -876,9 +889,12 @@ ipcMain.handle('capture-screen-subtitle-frame', async () => {
     if (process.env.OCR_DEBUG === '1') console.debug('[OCR] frame skipped', { reason: 'unchanged' });
     return null;
   }
+  const sourcePng = crop.toPNG();
   const png = subtitleMaskToPng(crop);
+  const frameId = ++screenFrameId;
+  rememberDiagnosticFrame(frameId, sourcePng, captureMode === 'manual' ? 'manual' : 'automatic', primaryDisplay);
   const frame = {
-    id: ++screenFrameId,
+    id: frameId,
     capturedAt,
     image: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
     imageChanged: change.imageChanged,
@@ -931,16 +947,50 @@ ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
   try {
     const result = await screenOcrWorker.recognize(image, request);
     const text = cleanOcrText(result.data.text);
-    const confidence = Number.isFinite(result.data.confidence) ? result.data.confidence : undefined;
+    const confidence = Number.isFinite(result.data.confidence) ? result.data.confidence : null;
+    const ocrMs = performance.now() - startedAt;
+    const diagnosticFrame = pendingDiagnosticFrames.get(frame.id);
+    pendingDiagnosticFrames.delete(frame.id);
+    if (diagnosticFrame) {
+      ocrDiagnosticSamples.recordCompletedCycle({
+        frameId: frame.id,
+        sourceImage: diagnosticFrame.sourceImage,
+        ocrInputImage: image,
+        captureMode: diagnosticFrame.captureMode,
+        ocrArea: diagnosticFrame.ocrArea,
+        screen: diagnosticFrame.screen,
+        ocr: { text, confidence, durationMs: ocrMs }
+      });
+    }
     if (process.env.OCR_DEBUG === '1') console.debug('[OCR] completed', { ...request, textLength: text.length, confidence });
     sendDeveloperStatus('OCR: accepted', request);
-    return { text, confidence, metrics: { ...frame.metrics, workerInitMs: screenOcrWorker.workerInitMs, ocrMs: performance.now() - startedAt } };
+    return { text, confidence, metrics: { ...frame.metrics, workerInitMs: screenOcrWorker.workerInitMs, ocrMs } };
   } catch (error) {
     sendDeveloperStatus(error?.code === 'OCR_TIMEOUT' ? 'OCR worker: timeout, restarting' : 'OCR: rejected', request);
     if (process.env.OCR_DEBUG === '1') console.debug(error?.code === 'OCR_TIMEOUT' ? '[OCR] timeout' : '[OCR] failed', { ...request, message: error.message });
     throw error;
   } finally {
     mainWindow?.webContents.send('ocr-progress', { type: 'reset', ...request });
+  }
+});
+
+ipcMain.handle('record-ocr-diagnostic-update', (_event, update) => {
+  if (!update || typeof update !== 'object' || !Number.isFinite(update.frameId)) return false;
+  const decision = update.decision;
+  const translation = update.translation;
+  if (decision && (typeof decision !== 'object' || typeof decision.accepted !== 'boolean' || typeof decision.reason !== 'string' || typeof decision.normalizedText !== 'string')) return false;
+  if (translation && (typeof translation !== 'object' || typeof translation.requested !== 'boolean' || typeof translation.completed !== 'boolean' || (translation.durationMs !== null && !Number.isFinite(translation.durationMs)))) return false;
+  return ocrDiagnosticSamples.updateLastCycle(update.frameId, { decision, translation });
+});
+
+ipcMain.handle('save-ocr-diagnostic-sample', async () => ocrDiagnosticSamples.saveLastSample());
+
+ipcMain.handle('open-ocr-diagnostics-folder', async () => {
+  try {
+    await fs.mkdir(ocrDiagnosticSamples.diagnosticsPath(), { recursive: true });
+    return (await shell.openPath(ocrDiagnosticSamples.diagnosticsPath())) === '';
+  } catch (_) {
+    return false;
   }
 });
 

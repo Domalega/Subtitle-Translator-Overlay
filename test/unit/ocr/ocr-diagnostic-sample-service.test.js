@@ -39,6 +39,13 @@ test('metadata replaces unavailable values with null and never contains undefine
   assert.equal(JSON.stringify(metadata).includes('undefined'), false);
   assert.deepEqual(metadata.ocrArea, { x: null, y: null, width: null, height: null });
   assert.deepEqual(metadata.translation, { requested: null, completed: null, durationMs: null });
+  assert.deepEqual(metadata.tracking, { state: null, reacquireCount: null, areaSource: null, lineCountEstimate: null, areaAdapted: null, adaptationReason: null });
+});
+
+test('metadata records automatic area tracking without changing image fields', () => {
+  const metadata = createMetadata({ captureMode: 'automatic', tracking: { state: 'locked', reacquireCount: 2, areaSource: 'automatic', lineCountEstimate: 2, areaAdapted: true, adaptationReason: 'second-line-above' }, ocrArea: {}, screen: {}, ocr: {}, decision: {}, translation: {} });
+  assert.equal(metadata.captureMode, 'automatic');
+  assert.deepEqual(metadata.tracking, { state: 'locked', reacquireCount: 2, areaSource: 'automatic', lineCountEstimate: 2, areaAdapted: true, adaptationReason: 'second-line-above' });
 });
 
 test('saves expected images and metadata in a separate sample directory', async (t) => {

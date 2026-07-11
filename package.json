@@ -13,6 +13,7 @@
     "test": "node --test test/unit/**/*.test.js",
     "test:ui": "node test/integration/ui-windows-smoke.js",
     "check:js": "node scripts/check-js.js",
+    "check:detection-samples": "node scripts/check-detection-samples.js",
     "verify": "npm run check:files && npm run check:ui && npm test && npm run test:ui && npm run check:js && git diff --check",
     "prebuild": "npm run verify",
     "build": "electron-builder --win portable",

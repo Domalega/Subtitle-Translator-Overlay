@@ -10,7 +10,9 @@
       "nearSourceMaxLines": "range", "themeSelect": "select", "fontSelect": "select",
       "fontScale": "range", "windowWidth": "range", "windowHeight": "range", "gameHotkey": "text",
       "deleteConfirmToggle": "checkbox", "contextCountSelect": "select", "resetDefaults": "button"
-    }
+    },
+    "accordions": ["display", "appearance", "size", "gameOcr", "dictionary", "context"],
+    "accordionInitialState": "closed"
   },
   "dictionary": {
     "html": "src/renderer/dictionary/dictionary.html",
@@ -33,7 +35,7 @@
     "elements": {
       "playPause": "button", "ocrOnce": "button", "addWord": "button", "dictionaryOpen": "button",
       "settingsToggle": "button", "focusToggle": "button", "gameModeToggle": "button",
-      "saveOcrSample": "button", "openOcrDiagnostics": "button", "findSubtitleArea": "button"
+      "developerTools": "section", "developerStatus": "div", "saveOcrSample": "button", "saveDetectionSample": "button", "openOcrDiagnostics": "button", "findSubtitleArea": "button", "useDetectedSubtitleArea": "button", "stopAutoTracking": "button"
     }
   }
 }

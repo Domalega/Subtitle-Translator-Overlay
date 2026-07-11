@@ -189,8 +189,8 @@ resetButton.addEventListener('click', async () => {
 document.querySelectorAll('.accordionHeader').forEach((header) => {
   const section = header.dataset.section;
   const body = document.getElementById(`section${section.charAt(0).toUpperCase() + section.slice(1)}`);
-   const isOpen = section === 'display';
-  if (isOpen) { header.classList.add('open'); body.classList.add('open'); }
+   header.classList.remove('open'); body.classList.remove('open');
+   header.querySelector('.accordionChevron').textContent = '▸';
 
   header.addEventListener('click', () => {
     const open = body.classList.toggle('open');

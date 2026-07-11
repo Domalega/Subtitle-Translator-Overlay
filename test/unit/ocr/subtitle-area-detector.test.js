@@ -141,3 +141,33 @@ test('reports bounded analysis dimensions and timing', () => {
   const result = detectSubtitleArea(frame);
   assert.ok(result.metrics.analyzedWidth <= 640); assert.ok(result.metrics.durationMs >= 0);
 });
+
+test('keeps a small white subtitle that is only two pixels high at 640', () => {
+  const frame = image(1920, 1080);
+  for (let index = 0; index < 28; index += 1) solid(frame, 700 + index * 16, 850, 7, 5);
+  const result = detectSubtitleArea(frame);
+  assert.equal(result.found, true);
+});
+
+test('finds a small subtitle with a thin dark shadow', () => {
+  const frame = image(1920, 1080);
+  for (let index = 0; index < 26; index += 1) { solid(frame, 700 + index * 16, 850, 8, 5, [35, 35, 35]); solid(frame, 700 + index * 16, 849, 7, 4, [255, 255, 255]); }
+  assert.equal(detectSubtitleArea(frame).found, true);
+});
+
+test('uses the 1024 fallback only after the 640 pass misses tiny text', () => {
+  const frame = image(3840, 2160);
+  for (let index = 0; index < 45; index += 1) solid(frame, 1500 + index * 20, 1700, 9, 4);
+  const result = detectSubtitleArea(frame);
+  assert.equal(result.found, true);
+  assert.equal(result.metrics.fallbackUsed, true);
+  assert.equal(result.metrics.analyzedWidth, 1024);
+  assert.ok(result.bestCandidate.x > 1400 && result.bestCandidate.y > 1600);
+});
+
+test('does not run fallback when the primary pass finds a subtitle', () => {
+  const frame = image(1920, 1080); subtitleLine(frame, 700, 820, 24, [255, 190, 20], 2);
+  const result = detectSubtitleArea(frame);
+  assert.equal(result.metrics.fallbackUsed, false);
+  assert.equal(result.metrics.fallbackDurationMs, 0);
+});

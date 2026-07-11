@@ -9,6 +9,11 @@ const { OcrWorkerService } = require('./services/ocr-worker-service');
 const { calculateCropBounds } = require('../shared/ocr/crop-bounds');
 const { FrameChangeDetector } = require('../shared/ocr/frame-change-detector');
 const { detectSubtitleArea } = require('../shared/ocr/subtitle-area-detector');
+const { SubtitleAreaTracker, STATES, isSimilarArea, stabilizeArea, clampAreaToScreen } = require('../shared/ocr/subtitle-area-tracker');
+const { adaptSubtitleArea } = require('../shared/ocr/subtitle-area-adapter');
+const { getActiveOcrArea: selectActiveOcrArea, physicalAreaToDip } = require('../shared/ocr/active-ocr-area');
+const { captureAreaToDisplayDipArea, displayDipAreaToCaptureArea, clampCaptureArea, validateAreaMapping } = require('../shared/ocr/ocr-area-coordinates');
+const { validateSubtitleCandidate, buildSubtitleEnvelope } = require('../shared/ocr/subtitle-candidate-validator');
 const { OcrMetrics } = require('./services/ocr-metrics');
 const { TranslationService } = require('./services/translation-service');
 const { OcrDiagnosticSampleService } = require('./services/ocr-diagnostic-sample-service');
@@ -33,15 +38,70 @@ let dictionaryWindow;
 let captureWindow;
 let translateWindow;
 let nearSourceWindow;
-let developerOcrZoneWindow;
+let developerManualOcrZoneWindow;
+let developerAutomaticOcrZoneWindow;
 let developerSubtitleCandidateWindow;
 let gameOcrWorkerPromise;
 let ocrArea = null;
 let ocrAnchorBoundsDip = null;
+let manualOcrArea = null;
+let manualOcrAnchorBoundsDip = null;
+let automaticOcrArea = null;
+let automaticOcrAnchorBoundsDip = null;
+let automaticDisplayId = null;
+let lastAutomaticBoundsDip = null;
+let automaticAreaAdapterState = {};
+let automaticAreaAdaptation = { lineCountEstimate: null, areaAdapted: null, adaptationReason: null, expandedTop: false, expandedBottom: false };
 let nearSourceContent = null;
 let nearSourceSettings = normalizeUiSettings(DEFAULT_UI_SETTINGS);
 let detectedSubtitleBoundsDip = null;
+let detectedSubtitleDisplayId = null;
+let detectedSubtitleLocalArea = null;
+let detectedSubtitleCaptureSize = null;
+let automaticCaptureSize = null;
+let automaticAreaRevision = 0;
+let lastDetectionSample = null;
 let subtitleDetectionBusy = false;
+let subtitleDetectionRequestId = 0;
+let subtitleDetectionRetryTimer = null;
+let pendingDistantCandidate = null;
+const subtitleAreaTracker = new SubtitleAreaTracker();
+const subtitleTrackingMetrics = { globalSearches: 0, totalSearchMs: 0, reacquireCount: 0, lockedStartedAt: null, lockedMs: 0, captureCount: 0, ocrRequestCount: 0, acceptedSubtitleCount: 0, duplicateRejectedCount: 0, emptyResultCount: 0, fallbackCount: 0, detector640Ms: 0, fallbackDetectorMs: 0, automaticEmptyFrames: 0, recentOcrRequests: [], recentGlobalSearches: [] };
+
+function getActiveOcrArea() {
+  return selectActiveOcrArea({ manualArea: manualOcrArea, manualAnchorBoundsDip: manualOcrAnchorBoundsDip, automaticArea: automaticOcrArea, automaticAnchorBoundsDip: automaticOcrAnchorBoundsDip, automaticDisplayId });
+}
+function activeOcrArea() { return getActiveOcrArea()?.area || null; }
+function activeOcrAnchorBoundsDip() { return getActiveOcrArea()?.anchorBoundsDip || null; }
+function activeAreaSource() { return getActiveOcrArea()?.source || null; }
+function syncActiveOcrArea() { const active = getActiveOcrArea(); ocrArea = active?.area || null; ocrAnchorBoundsDip = active?.anchorBoundsDip || null; }
+
+function trackingDetails() {
+  const snapshot = subtitleAreaTracker.snapshot();
+  const visualizedAreaType = detectedSubtitleBoundsDip ? 'candidate' : activeAreaSource();
+  const visualWindow = visualizedAreaType === 'candidate' ? developerSubtitleCandidateWindow : visualizedAreaType === 'automatic' ? developerAutomaticOcrZoneWindow : developerManualOcrZoneWindow;
+  return {
+    areaSource: activeAreaSource(), trackerState: snapshot.state, emptyDurationMs: snapshot.emptyDurationMs,
+    lockedArea: automaticOcrArea ? { width: automaticOcrArea.width, height: automaticOcrArea.height } : null,
+    lineCountEstimate: automaticAreaAdaptation.lineCountEstimate,
+    areaAdapted: automaticAreaAdaptation.areaAdapted,
+    adaptationReason: automaticAreaAdaptation.adaptationReason,
+    expandedTop: automaticAreaAdaptation.expandedTop,
+    expandedBottom: automaticAreaAdaptation.expandedBottom,
+    lastGlobalSearchDurationMs: subtitleTrackingMetrics.globalSearches ? subtitleTrackingMetrics.totalSearchMs / subtitleTrackingMetrics.globalSearches : null,
+    reacquireCount: subtitleTrackingMetrics.reacquireCount,
+    captureCount: subtitleTrackingMetrics.captureCount, ocrRequestCount: subtitleTrackingMetrics.ocrRequestCount,
+    acceptedSubtitleCount: subtitleTrackingMetrics.acceptedSubtitleCount, duplicateRejectedCount: subtitleTrackingMetrics.duplicateRejectedCount,
+    emptyResultCount: subtitleTrackingMetrics.emptyResultCount, fallbackCount: subtitleTrackingMetrics.fallbackCount,
+    detector640Ms: Math.round(subtitleTrackingMetrics.detector640Ms), fallbackDetectorMs: Math.round(subtitleTrackingMetrics.fallbackDetectorMs),
+    ocrRequestsPerMinute: subtitleTrackingMetrics.recentOcrRequests.length, globalSearchesPerMinute: subtitleTrackingMetrics.recentGlobalSearches.length
+    , visualizedAreaType, activeOcrArea: ocrArea ? { ...ocrArea } : null,
+    overlayWindow: visualWindow && !visualWindow.isDestroyed() ? (visualWindow.isVisible() ? 'visible' : 'hidden') : 'destroyed'
+    , detection: lastDetectionSample?.status || null
+  };
+}
+
+function sendTrackingStatus(stage) { sendDeveloperStatus(stage, trackingDetails()); }
 
 function developerZoneColor(theme) {
   return ({ green: '#41d17c', blue: '#4ca8ff', purple: '#b07cff', dark: '#d7dce2', nothing: '#222222', 'nothing-dark': '#eeeeee', 'nothing-os-light': '#222222', 'nothing-os-dark': '#eeeeee' })[theme] || '#41d17c';
@@ -56,27 +116,39 @@ function sendDeveloperStatus(stage, details = {}) {
   if (loadUiSettings().developerMode === true) mainWindow?.webContents.send('developer-status', { stage, ...details });
 }
 
-function updateDeveloperOcrZone(settings = loadUiSettings()) {
-  const enabled = settings.developerMode === true;
-  if (!enabled || !ocrAnchorBoundsDip) {
-    if (developerOcrZoneWindow && !developerOcrZoneWindow.isDestroyed()) developerOcrZoneWindow.hide();
+function updateDeveloperZone({ window, setWindow, getWindow, boundsDip, type, settings }) {
+  if (settings.developerMode !== true || !boundsDip) {
+    if (window && !window.isDestroyed()) window.hide();
     return;
   }
   const border = 2;
-  const bounds = { x: Math.round(ocrAnchorBoundsDip.x - border), y: Math.round(ocrAnchorBoundsDip.y - border), width: Math.round(ocrAnchorBoundsDip.width + border * 2), height: Math.round(ocrAnchorBoundsDip.height + border * 2) };
-  if (!developerOcrZoneWindow || developerOcrZoneWindow.isDestroyed()) {
-    developerOcrZoneWindow = new BrowserWindow({ ...bounds, transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, show: false, webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false } });
-    developerOcrZoneWindow.setAlwaysOnTop(true, 'screen-saver');
-    excludeWindowFromScreenCapture(developerOcrZoneWindow);
-    developerOcrZoneWindow.setIgnoreMouseEvents(true);
-    developerOcrZoneWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-ocr-zone.html'));
-    developerOcrZoneWindow.webContents.once('did-finish-load', () => { developerOcrZoneWindow?.webContents.send('developer-ocr-zone-theme', developerZoneColor(settings.theme)); developerOcrZoneWindow?.showInactive(); });
-    developerOcrZoneWindow.on('closed', () => { developerOcrZoneWindow = null; });
+  const bounds = { x: Math.round(boundsDip.x - border), y: Math.round(boundsDip.y - border), width: Math.max(1, Math.round(boundsDip.width + border * 2)), height: Math.max(1, Math.round(boundsDip.height + border * 2)) };
+  if (!window || window.isDestroyed()) {
+    const created = new BrowserWindow({ ...bounds, transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, show: false, webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+    setWindow(created);
+    created.setAlwaysOnTop(true, 'screen-saver'); excludeWindowFromScreenCapture(created); created.setIgnoreMouseEvents(true);
+    created.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-ocr-zone.html'));
+    created.webContents.once('did-finish-load', () => {
+      if (getWindow() !== created || created.isDestroyed() || loadUiSettings().developerMode !== true) return;
+      created.webContents.send('developer-ocr-zone-theme', developerZoneColor(settings.theme));
+      created.webContents.send('developer-ocr-zone-style', type);
+      created.webContents.send('developer-ocr-zone-state', { type, bounds: boundsDip });
+      if (!created.isDestroyed()) created.showInactive();
+    });
+    created.on('closed', () => {
+      if (type === 'manual' && developerManualOcrZoneWindow === created) developerManualOcrZoneWindow = null;
+      if (type === 'automatic' && developerAutomaticOcrZoneWindow === created) developerAutomaticOcrZoneWindow = null;
+      if (mainWindow && !mainWindow.isDestroyed()) setTimeout(() => updateDeveloperOcrZone(), 0);
+    });
   } else {
-    developerOcrZoneWindow.setBounds(bounds);
-    developerOcrZoneWindow.webContents.send('developer-ocr-zone-theme', developerZoneColor(settings.theme));
-    if (!developerOcrZoneWindow.isVisible()) developerOcrZoneWindow.showInactive();
+    window.setBounds(bounds); window.webContents.send('developer-ocr-zone-theme', developerZoneColor(settings.theme)); window.webContents.send('developer-ocr-zone-style', type); window.webContents.send('developer-ocr-zone-state', { type, bounds: boundsDip });
+    if (!window.isVisible()) window.showInactive();
   }
+}
+
+function updateDeveloperOcrZone(settings = loadUiSettings()) {
+  updateDeveloperZone({ window: developerManualOcrZoneWindow, setWindow: (value) => { developerManualOcrZoneWindow = value; }, getWindow: () => developerManualOcrZoneWindow, boundsDip: manualOcrAnchorBoundsDip, type: 'manual', settings });
+  updateDeveloperZone({ window: developerAutomaticOcrZoneWindow, setWindow: (value) => { developerAutomaticOcrZoneWindow = value; }, getWindow: () => developerAutomaticOcrZoneWindow, boundsDip: automaticOcrAnchorBoundsDip, type: 'automatic', settings });
 }
 
 function updateDeveloperSubtitleCandidateZone(settings = loadUiSettings()) {
@@ -101,8 +173,9 @@ function updateDeveloperSubtitleCandidateZone(settings = loadUiSettings()) {
     excludeWindowFromScreenCapture(developerSubtitleCandidateWindow);
     developerSubtitleCandidateWindow.setIgnoreMouseEvents(true);
     developerSubtitleCandidateWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-subtitle-candidate.html'));
-    developerSubtitleCandidateWindow.webContents.once('did-finish-load', () => { developerSubtitleCandidateWindow?.webContents.send('developer-subtitle-candidate-state', { visible: true }); developerSubtitleCandidateWindow?.showInactive(); });
-    developerSubtitleCandidateWindow.on('closed', () => { developerSubtitleCandidateWindow = null; });
+    const created = developerSubtitleCandidateWindow;
+    created.webContents.once('did-finish-load', () => { if (developerSubtitleCandidateWindow === created && !created.isDestroyed()) { created.webContents.send('developer-subtitle-candidate-state', { visible: true }); created.showInactive(); } });
+    created.on('closed', () => { if (developerSubtitleCandidateWindow === created) developerSubtitleCandidateWindow = null; });
   } else {
     developerSubtitleCandidateWindow.setBounds(bounds);
     if (!developerSubtitleCandidateWindow.isVisible()) developerSubtitleCandidateWindow.showInactive();
@@ -113,15 +186,77 @@ function displayForSubtitleDetection() {
   return ocrAnchorBoundsDip ? screen.getDisplayMatching(ocrAnchorBoundsDip) : screen.getPrimaryDisplay();
 }
 
-function subtitleCandidateBoundsDip(candidate, imageSize, display) {
-  const scaleX = display.size.width / imageSize.width;
-  const scaleY = display.size.height / imageSize.height;
-  return {
-    x: display.bounds.x + candidate.x * scaleX,
-    y: display.bounds.y + candidate.y * scaleY,
-    width: candidate.width * scaleX,
-    height: candidate.height * scaleY
-  };
+function subtitleCandidateBoundsDip(candidate, imageSize, display) { return captureAreaToDisplayDipArea(clampCaptureArea(candidate, imageSize), imageSize, display.bounds); }
+
+function setAutomaticAreaFromCandidate(candidateCaptureArea, captureSize, display, { reacquired = false } = {}) {
+  const relative = clampCaptureArea(candidateCaptureArea, captureSize);
+  const candidateBoundsDip = captureAreaToDisplayDipArea(relative, captureSize, display.bounds);
+  const previousRelative = automaticOcrAnchorBoundsDip && automaticDisplayId === display.id ? {
+    x: automaticOcrAnchorBoundsDip.x - display.bounds.x, y: automaticOcrAnchorBoundsDip.y - display.bounds.y,
+    width: automaticOcrAnchorBoundsDip.width, height: automaticOcrAnchorBoundsDip.height
+  } : null;
+  const stable = stabilizeArea(previousRelative, relative, display.size);
+  automaticOcrArea = displayDipAreaToCaptureArea(stable, captureSize, display.bounds);
+  automaticCaptureSize = { ...captureSize };
+  automaticOcrAnchorBoundsDip = captureAreaToDisplayDipArea(automaticOcrArea, automaticCaptureSize, display.bounds);
+  automaticAreaRevision += 1;
+  lastAutomaticBoundsDip = { ...automaticOcrAnchorBoundsDip };
+  automaticDisplayId = display.id;
+  automaticAreaAdapterState = {};
+  automaticAreaAdaptation = { lineCountEstimate: null, areaAdapted: null, adaptationReason: null, expandedTop: false, expandedBottom: false };
+  syncActiveOcrArea();
+  frameChangeDetector.reset();
+  if (reacquired) subtitleTrackingMetrics.reacquireCount += 1;
+  subtitleTrackingMetrics.lockedStartedAt = performance.now();
+  updateDeveloperOcrZone();
+  mainWindow?.webContents.send('ocr-area-changed', ocrArea);
+}
+
+function stopAutomaticTracking() {
+  if (subtitleTrackingMetrics.lockedStartedAt) subtitleTrackingMetrics.lockedMs += performance.now() - subtitleTrackingMetrics.lockedStartedAt;
+  subtitleTrackingMetrics.lockedStartedAt = null;
+  subtitleAreaTracker.dispatch('manualStop');
+  automaticOcrArea = null;
+  automaticCaptureSize = null;
+  automaticOcrAnchorBoundsDip = null;
+  automaticDisplayId = null;
+  lastAutomaticBoundsDip = null;
+  automaticAreaAdapterState = {};
+  automaticAreaAdaptation = { lineCountEstimate: null, areaAdapted: null, adaptationReason: null, expandedTop: false, expandedBottom: false };
+  pendingDistantCandidate = null;
+  clearTimeout(subtitleDetectionRetryTimer);
+  subtitleDetectionRetryTimer = null;
+  syncActiveOcrArea();
+  frameChangeDetector.reset();
+  updateDeveloperOcrZone();
+  mainWindow?.webContents.send('ocr-area-changed', ocrArea);
+  sendTrackingStatus('Auto tracking stopped');
+}
+
+function adaptAutomaticArea(source, display, imageSize, capturedAt) {
+  if (!automaticOcrArea) return null;
+  const guard = Math.max(16, Math.round(imageSize.height * 0.02));
+  const guardBounds = clampCaptureArea({ ...automaticOcrArea, y: automaticOcrArea.y - guard, height: automaticOcrArea.height + guard * 2 }, imageSize);
+  const guardCrop = source.thumbnail.crop(guardBounds);
+  const result = adaptSubtitleArea({
+    area: automaticOcrArea,
+    screen: imageSize,
+    image: { width: guardCrop.getSize().width, height: guardCrop.getSize().height, data: guardCrop.toBitmap(), pixelOrder: 'bgra', originY: guardBounds.y },
+    state: automaticAreaAdapterState,
+    now: capturedAt
+  });
+  automaticAreaAdapterState = result.state;
+  automaticAreaAdaptation = { lineCountEstimate: result.lineCountEstimate, areaAdapted: result.changed, adaptationReason: result.reason, expandedTop: result.expandedTop, expandedBottom: result.expandedBottom };
+  if (!result.changed) return null;
+  automaticOcrArea = result.area;
+  automaticCaptureSize = { ...imageSize };
+  automaticOcrAnchorBoundsDip = captureAreaToDisplayDipArea(automaticOcrArea, automaticCaptureSize, display.bounds);
+  automaticAreaRevision += 1;
+  lastAutomaticBoundsDip = { ...automaticOcrAnchorBoundsDip };
+  syncActiveOcrArea();
+  updateDeveloperOcrZone();
+  sendTrackingStatus(`Auto area adapted: ${result.reason}`);
+  return result;
 }
 let gameOcrBusy = false;
 let gameModeEnabled = false;
@@ -150,6 +285,7 @@ function rememberDiagnosticFrame(frameId, sourceImage, captureMode, display) {
     sourceImage: Buffer.from(sourceImage),
     captureMode,
     ocrArea: ocrArea ? { ...ocrArea } : null,
+    tracking: { state: subtitleAreaTracker.state, ...trackingDetails() },
     screen: { width: display.size.width, height: display.size.height, scaleFactor: display.scaleFactor || 1 }
   });
   while (pendingDiagnosticFrames.size > 2) pendingDiagnosticFrames.delete(pendingDiagnosticFrames.keys().next().value);
@@ -230,6 +366,17 @@ function subtitleMaskToPng(image) {
   }
 
   return PNG.sync.write(png);
+}
+
+function hasTextLikePixels(image) {
+  const bitmap = image.toBitmap();
+  let count = 0;
+  for (let index = 0; index < bitmap.length; index += 16) {
+    const maximum = Math.max(bitmap[index], bitmap[index + 1], bitmap[index + 2]);
+    const minimum = Math.min(bitmap[index], bitmap[index + 1], bitmap[index + 2]);
+    if (maximum > 175 && maximum - minimum < 110 && ++count >= 12) return true;
+  }
+  return false;
 }
 
 function createSelectionWindow() {
@@ -570,7 +717,8 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     if (nearSourceWindow && !nearSourceWindow.isDestroyed()) nearSourceWindow.close();
-    if (developerOcrZoneWindow && !developerOcrZoneWindow.isDestroyed()) developerOcrZoneWindow.close();
+    if (developerManualOcrZoneWindow && !developerManualOcrZoneWindow.isDestroyed()) developerManualOcrZoneWindow.close();
+    if (developerAutomaticOcrZoneWindow && !developerAutomaticOcrZoneWindow.isDestroyed()) developerAutomaticOcrZoneWindow.close();
     if (developerSubtitleCandidateWindow && !developerSubtitleCandidateWindow.isDestroyed()) developerSubtitleCandidateWindow.close();
     nearSourceWindow = null;
     mainWindow = null;
@@ -605,18 +753,19 @@ function createWindow() {
     && savedOcrArea.width > 0 && savedOcrArea.height > 0) {
     const display = screen.getPrimaryDisplay();
     const scale = display.scaleFactor || 1;
-    ocrArea = {
+    manualOcrArea = {
       x: savedOcrArea.x * scale,
       y: savedOcrArea.y * scale,
       width: savedOcrArea.width * scale,
       height: savedOcrArea.height * scale
     };
-    ocrAnchorBoundsDip = {
+    manualOcrAnchorBoundsDip = {
       x: display.bounds.x + savedOcrArea.x,
       y: display.bounds.y + savedOcrArea.y,
       width: savedOcrArea.width,
       height: savedOcrArea.height
     };
+    syncActiveOcrArea();
     mainWindow.webContents.once('did-finish-load', () => {
       mainWindow?.webContents.send('ocr-area-changed', ocrArea);
     });
@@ -655,32 +804,35 @@ async function runUiSmokeTest() {
       window.setPosition(-10000, -10000);
       window.showInactive();
     }
-    developerOcrZoneWindow = new BrowserWindow({
-      width: 120,
-      height: 80,
-      show: false,
-      paintWhenInitiallyHidden: true,
-      frame: false,
-      webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false }
-    });
-    developerOcrZoneWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-ocr-zone.html'));
     watchWindow(settingsWindow, 'settings');
     watchWindow(dictionaryWindow, 'dictionary');
-    if (developerOcrZoneWindow) watchWindow(developerOcrZoneWindow, 'developer overlay');
     await new Promise((resolve) => setTimeout(resolve, 100));
     console.log('UI smoke test: tool windows checked.');
 
     const mainResult = await evaluate(mainWindow, `(() => {
-      const ids = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle', 'findSubtitleArea'];
+      const ids = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle', 'findSubtitleArea', 'useDetectedSubtitleArea', 'stopAutoTracking', 'saveDetectionSample'];
       document.getElementById('playPause').click();
       document.getElementById('playPause').click();
       document.getElementById('ocrOnce').click();
-      return { missing: ids.filter((id) => !document.getElementById(id)), preload: Boolean(window.overlayApi), enabled: ids.filter((id) => document.getElementById(id)?.disabled) };
+      const tools = document.getElementById('developerTools');
+      const hiddenBefore = tools.hidden;
+      document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled: true } }));
+      const visibleAfter = !tools.hidden;
+      document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled: false } }));
+      const hiddenAfter = tools.hidden;
+      const developerInside = ['saveOcrSample', 'saveDetectionSample', 'openOcrDiagnostics', 'findSubtitleArea', 'useDetectedSubtitleArea', 'stopAutoTracking'].every((id) => tools.contains(document.getElementById(id)));
+      const mainOutside = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle'].every((id) => !tools.contains(document.getElementById(id)));
+      return { missing: ids.filter((id) => !document.getElementById(id)), preload: Boolean(window.overlayApi), enabled: ids.filter((id) => document.getElementById(id)?.disabled), hiddenBefore, visibleAfter, hiddenAfter, developerInside, mainOutside };
     })()`, 'main');
-    if (mainResult.missing.length || !mainResult.preload || mainResult.enabled.length) reportFailure(`main controls failed: ${JSON.stringify(mainResult)}`);
+    if (mainResult.missing.length || !mainResult.preload || mainResult.enabled.length || !mainResult.hiddenBefore || !mainResult.visibleAfter || !mainResult.hiddenAfter || !mainResult.developerInside || !mainResult.mainOutside) reportFailure(`main controls failed: ${JSON.stringify(mainResult)}`);
 
     const settingsResult = await evaluate(settingsWindow, `new Promise((resolve) => setTimeout(() => {
       const displayMode = document.getElementById('displayMode');
+      const headers = [...document.querySelectorAll('.accordionHeader')];
+      const initiallyClosed = headers.every((header) => !header.classList.contains('open')) && [...document.querySelectorAll('.accordionBody')].every((body) => !body.classList.contains('open'));
+      const displayHeader = document.querySelector('[data-section="display"]');
+      displayHeader.click(); const displayOpens = displayHeader.classList.contains('open');
+      displayHeader.click(); const displayCloses = !displayHeader.classList.contains('open');
       displayMode.value = 'both'; displayMode.dispatchEvent(new Event('change', { bubbles: true }));
       document.querySelectorAll('.accordionHeader').forEach((header) => {
         if (!header.classList.contains('open')) header.click();
@@ -691,9 +843,16 @@ async function runUiSmokeTest() {
       select.value = 'blue'; select.dispatchEvent(new Event('change', { bubbles: true }));
       const visible = [...checkboxes, ...ranges].every((element) => getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden');
       const sized = [...checkboxes, ...ranges].every((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0);
-      setTimeout(() => resolve({ checkboxes: checkboxes.length, ranges: ranges.length, visible, sized, theme: document.body.dataset.theme, enabled: !document.getElementById('resetDefaults').disabled }), 100);
+      setTimeout(() => resolve({ checkboxes: checkboxes.length, ranges: ranges.length, visible, sized, theme: document.body.dataset.theme, enabled: !document.getElementById('resetDefaults').disabled, initiallyClosed, displayOpens, displayCloses }), 100);
     }, 50))`, 'settings');
-    if (!settingsResult.checkboxes || !settingsResult.ranges || !settingsResult.visible || !settingsResult.sized || settingsResult.theme !== 'blue' || !settingsResult.enabled) reportFailure(`Settings controls failed: ${JSON.stringify(settingsResult)}`);
+    if (!settingsResult.checkboxes || !settingsResult.ranges || !settingsResult.visible || !settingsResult.sized || settingsResult.theme !== 'blue' || !settingsResult.enabled || !settingsResult.initiallyClosed || !settingsResult.displayOpens || !settingsResult.displayCloses) reportFailure(`Settings controls failed: ${JSON.stringify(settingsResult)}`);
+
+    settingsWindow.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    settingsWindow = createToolWindow('renderer/settings/settings.html', 'Settings', 560, 760);
+    settingsWindow.setPosition(-10000, -10000); settingsWindow.showInactive(); watchWindow(settingsWindow, 'settings reopened');
+    const reopenedSettings = await evaluate(settingsWindow, `new Promise((resolve) => setTimeout(() => resolve({ closed: [...document.querySelectorAll('.accordionHeader')].every((header) => !header.classList.contains('open')) && [...document.querySelectorAll('.accordionBody')].every((body) => !body.classList.contains('open')), display: !document.querySelector('[data-section="display"]').classList.contains('open'), mode: document.getElementById('displayMode').value, theme: document.getElementById('themeSelect').value }), 100))`, 'settings reopened');
+    if (!reopenedSettings.closed || !reopenedSettings.display || reopenedSettings.mode !== 'both' || reopenedSettings.theme !== 'blue') reportFailure(`Settings reopen failed: ${JSON.stringify(reopenedSettings)}`);
 
     const appliedTheme = await evaluate(mainWindow, `document.querySelector('.panel').dataset.theme`, 'main theme');
     if (appliedTheme !== 'blue') reportFailure(`main theme did not change: ${appliedTheme}`);
@@ -754,8 +913,24 @@ if (!singleInstanceLock) {
     restoreMainWindow();
   });
 
-  app.whenReady().then(() => {
+app.whenReady().then(() => {
     createWindow();
+    const invalidateAutomaticArea = () => {
+      if (!automaticOcrArea) return;
+      subtitleAreaTracker.dispatch('screenChanged');
+      automaticOcrArea = null;
+      automaticOcrAnchorBoundsDip = null;
+      automaticDisplayId = null;
+      syncActiveOcrArea();
+      frameChangeDetector.reset();
+      updateDeveloperOcrZone();
+      mainWindow?.webContents.send('ocr-area-changed', ocrArea);
+      sendTrackingStatus('Auto area lost: display changed');
+      scheduleTrackedSearch();
+    };
+    screen.on('display-metrics-changed', invalidateAutomaticArea);
+    screen.on('display-added', invalidateAutomaticArea);
+    screen.on('display-removed', invalidateAutomaticArea);
     if (UI_SMOKE) {
       console.log('UI smoke test: app ready.');
       runUiSmokeTest();
@@ -871,18 +1046,19 @@ ipcMain.handle('complete-ocr-area', async (_event, area) => {
   if (!area || ![area.x, area.y, area.width, area.height].every(Number.isFinite)) return null;
   const display = screen.getPrimaryDisplay();
   const scale = display.scaleFactor || 1;
-  ocrArea = {
+  manualOcrArea = {
     x: area.x * scale,
     y: area.y * scale,
     width: area.width * scale,
     height: area.height * scale
   };
-  ocrAnchorBoundsDip = {
+  manualOcrAnchorBoundsDip = {
     x: display.bounds.x + area.x,
     y: display.bounds.y + area.y,
     width: area.width,
     height: area.height
   };
+  if (!automaticOcrArea) syncActiveOcrArea();
   frameChangeDetector.reset();
   const settings = loadUiSettings();
   settings.ocrArea = { x: area.x, y: area.y, width: area.width, height: area.height };
@@ -1034,46 +1210,49 @@ ipcMain.handle('export-dictionary', async (_event, entries, format) => {
 });
 
 ipcMain.handle('capture-screen-subtitle-frame', async (_event, captureMode) => {
-  if (!ocrArea) return null;
+  const active = getActiveOcrArea();
+  if (!active) return null;
   const capturedAt = performance.now();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const scale = primaryDisplay.scaleFactor || 1;
+  subtitleTrackingMetrics.captureCount += 1;
+  const display = automaticDisplayId ? screen.getAllDisplays().find((entry) => entry.id === automaticDisplayId) : screen.getDisplayMatching(activeOcrAnchorBoundsDip() || screen.getPrimaryDisplay().bounds);
+  if (!display) return null;
+  const scale = display.scaleFactor || 1;
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
-    thumbnailSize: { width: Math.round(primaryDisplay.size.width * scale), height: Math.round(primaryDisplay.size.height * scale) }
+    thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }
   });
   const captureMs = performance.now() - capturedAt;
-  const source = sources[0];
+  const source = sources.find((entry) => entry.display_id === String(display.id)) || sources[0];
   if (!source) return null;
   const imageSize = source.thumbnail.getSize();
   const cropStartedAt = performance.now();
-  const cropBounds = calculateCropBounds({
-    imageSize,
-    displaySize: { width: primaryDisplay.size.width * scale, height: primaryDisplay.size.height * scale },
-    ocrArea
-  });
+  if (automaticOcrArea) adaptAutomaticArea(source, display, imageSize, capturedAt);
+  const currentActive = getActiveOcrArea();
+  if (!currentActive) return null;
+  const cropBounds = automaticOcrArea ? clampCaptureArea(currentActive.area, imageSize) : calculateCropBounds({ imageSize, displaySize: { width: display.size.width * scale, height: display.size.height * scale }, ocrArea: currentActive.area });
   const crop = source.thumbnail.crop(cropBounds);
   const cropMs = performance.now() - cropStartedAt;
   const fingerprintStartedAt = performance.now();
   const change = frameChangeDetector.inspect(crop.toBitmap(), crop.getSize(), capturedAt);
   const frameFingerprintMs = performance.now() - fingerprintStartedAt;
   if (!change.changed) {
-    sendDeveloperStatus('Capture: frame unchanged');
+    sendTrackingStatus('Capture: frame unchanged');
     if (process.env.OCR_DEBUG === '1') console.debug('[OCR] frame skipped', { reason: 'unchanged' });
     return null;
   }
   const sourcePng = crop.toPNG();
   const png = subtitleMaskToPng(crop);
   const frameId = ++screenFrameId;
-  rememberDiagnosticFrame(frameId, sourcePng, captureMode === 'manual' ? 'manual' : 'automatic', primaryDisplay);
+  rememberDiagnosticFrame(frameId, sourcePng, activeAreaSource() || (captureMode === 'manual' ? 'manual' : 'automatic'), display);
   const frame = {
     id: frameId,
     capturedAt,
     image: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
     imageChanged: change.imageChanged,
-    forced: change.forced
+    forced: change.forced,
+    textLike: hasTextLikePixels(crop)
   };
-  sendDeveloperStatus(change.imageChanged ? 'Capture: frame changed' : 'OCR: forced check');
+  sendTrackingStatus(change.imageChanged ? 'Capture: frame changed' : 'OCR: forced check');
   if (process.env.OCR_DEBUG === '1') {
     console.debug('[OCR] frame changed', { id: frame.id, imageBytes: frame.image.byteLength });
   }
@@ -1114,6 +1293,9 @@ ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
   }
   const startedAt = performance.now();
   const request = { requestId: frame.id, generation: frame.generation };
+  subtitleTrackingMetrics.ocrRequestCount += 1;
+  subtitleTrackingMetrics.recentOcrRequests.push(startedAt);
+  subtitleTrackingMetrics.recentOcrRequests = subtitleTrackingMetrics.recentOcrRequests.filter((time) => startedAt - time < 60000);
   mainWindow?.webContents.send('ocr-progress', { type: 'started', ...request });
   sendDeveloperStatus('OCR: frame queued', request);
   if (process.env.OCR_DEBUG === '1') console.debug('[OCR] started', request);
@@ -1132,11 +1314,24 @@ ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
         captureMode: diagnosticFrame.captureMode,
         ocrArea: diagnosticFrame.ocrArea,
         screen: diagnosticFrame.screen,
+        tracking: diagnosticFrame.tracking,
         ocr: { text, confidence, durationMs: ocrMs }
       });
     }
+    if (automaticOcrArea) {
+      const event = /[a-zA-Z]{2}/.test(text) ? 'textDetected' : 'emptyFrame';
+      subtitleTrackingMetrics.automaticEmptyFrames = event === 'emptyFrame' ? subtitleTrackingMetrics.automaticEmptyFrames + 1 : 0;
+      if (subtitleTrackingMetrics.automaticEmptyFrames >= 2) automaticAreaAdapterState = {};
+      const tracking = subtitleAreaTracker.dispatch(event);
+      if (tracking.action === 'markLost') {
+        sendTrackingStatus('Auto area lost');
+        scheduleTrackedSearch();
+      } else if (tracking.state === STATES.POSSIBLE_LOST) {
+        sendTrackingStatus('Auto area possible-lost');
+      }
+    }
     if (process.env.OCR_DEBUG === '1') console.debug('[OCR] completed', { ...request, textLength: text.length, confidence });
-    sendDeveloperStatus('OCR: accepted', request);
+    sendTrackingStatus('OCR: accepted');
     return { text, confidence, metrics: { ...frame.metrics, workerInitMs: screenOcrWorker.workerInitMs, ocrMs } };
   } catch (error) {
     sendDeveloperStatus(error?.code === 'OCR_TIMEOUT' ? 'OCR worker: timeout, restarting' : 'OCR: rejected', request);
@@ -1153,10 +1348,26 @@ ipcMain.handle('record-ocr-diagnostic-update', (_event, update) => {
   const translation = update.translation;
   if (decision && (typeof decision !== 'object' || typeof decision.accepted !== 'boolean' || typeof decision.reason !== 'string' || typeof decision.normalizedText !== 'string')) return false;
   if (translation && (typeof translation !== 'object' || typeof translation.requested !== 'boolean' || typeof translation.completed !== 'boolean' || (translation.durationMs !== null && !Number.isFinite(translation.durationMs)))) return false;
+  if (decision?.accepted && decision.reason === 'accepted') subtitleTrackingMetrics.acceptedSubtitleCount += 1;
+  if (decision && ['same', 'similar'].includes(decision.reason)) subtitleTrackingMetrics.duplicateRejectedCount += 1;
+  if (decision?.reason === 'empty') subtitleTrackingMetrics.emptyResultCount += 1;
   return ocrDiagnosticSamples.updateLastCycle(update.frameId, { decision, translation });
 });
 
 ipcMain.handle('save-ocr-diagnostic-sample', async () => ocrDiagnosticSamples.saveLastSample());
+
+ipcMain.handle('save-detection-sample', async () => {
+  if (!lastDetectionSample?.sourceImage) return { ok: false, error: 'NO_DETECTION_SAMPLE' };
+  const name = `detection-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const folder = path.join(ocrDiagnosticSamples.diagnosticsPath(), name);
+  try {
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, 'detection-source.png'), lastDetectionSample.sourceImage);
+    if (lastDetectionSample.candidateImage) await fs.writeFile(path.join(folder, 'detection-candidate.png'), lastDetectionSample.candidateImage);
+    await fs.writeFile(path.join(folder, 'detection-metadata.json'), JSON.stringify(lastDetectionSample.status, null, 2), 'utf8');
+    return { ok: true };
+  } catch (_) { return { ok: false, error: 'SAVE_FAILED' }; }
+});
 
 ipcMain.handle('open-ocr-diagnostics-folder', async () => {
   try {
@@ -1167,10 +1378,11 @@ ipcMain.handle('open-ocr-diagnostics-folder', async () => {
   }
 });
 
-ipcMain.handle('find-subtitle-area', async () => {
+async function findSubtitleArea({ tracking = false } = {}) {
   if (loadUiSettings().developerMode !== true) return { ok: false, error: 'DEVELOPER_MODE_DISABLED' };
   if (subtitleDetectionBusy) return { ok: false, error: 'DETECTION_BUSY' };
   subtitleDetectionBusy = true;
+  const requestId = ++subtitleDetectionRequestId;
   const actionStartedAt = performance.now();
   try {
     const display = displayForSubtitleDetection();
@@ -1184,33 +1396,129 @@ ipcMain.handle('find-subtitle-area', async () => {
     const source = sources.find((entry) => entry.display_id === String(display.id)) || sources[0];
     if (!source) {
       detectedSubtitleBoundsDip = null;
+      detectedSubtitleDisplayId = null;
+      detectedSubtitleLocalArea = null;
+      detectedSubtitleCaptureSize = null;
       updateDeveloperSubtitleCandidateZone();
-      sendDeveloperStatus('Detection: not found');
+      if (tracking) subtitleAreaTracker.dispatch('candidateNotFound');
+      sendTrackingStatus('Detection: not found');
       return { ok: true, found: false, metrics: { captureMs, detectorMs: null, totalMs: performance.now() - actionStartedAt } };
     }
     const imageSize = source.thumbnail.getSize();
-    const result = detectSubtitleArea({ width: imageSize.width, height: imageSize.height, data: source.thumbnail.toBitmap(), pixelOrder: 'bgra' });
+    const screenshot = { width: imageSize.width, height: imageSize.height, data: source.thumbnail.toBitmap(), pixelOrder: 'bgra' };
+    const result = detectSubtitleArea(screenshot);
+    subtitleTrackingMetrics.detector640Ms += result.metrics.primaryDurationMs || result.metrics.durationMs || 0;
+    subtitleTrackingMetrics.fallbackDetectorMs += result.metrics.fallbackDurationMs || 0;
+    if (result.metrics.fallbackUsed) subtitleTrackingMetrics.fallbackCount += 1;
     const totalMs = performance.now() - actionStartedAt;
-    if (!result.found) {
+    const detectorSize = { width: result.metrics.analyzedWidth, height: result.metrics.analyzedHeight };
+    const seedCandidate = result.bestCandidate ? clampCaptureArea(result.bestCandidate, imageSize) : null;
+    let candidateBeforeValidation = seedCandidate ? buildSubtitleEnvelope(screenshot, seedCandidate) : null;
+    let validation = candidateBeforeValidation ? validateSubtitleCandidate(screenshot, candidateBeforeValidation) : { valid: false, reason: 'detector-not-found' };
+    if (validation.status === 'incomplete') {
+      candidateBeforeValidation = clampCaptureArea({ x: candidateBeforeValidation.x - 24, y: candidateBeforeValidation.y - 8, width: candidateBeforeValidation.width + 48, height: candidateBeforeValidation.height + 16 }, imageSize);
+      validation = validateSubtitleCandidate(screenshot, candidateBeforeValidation);
+    }
+    const candidateDip = candidateBeforeValidation ? subtitleCandidateBoundsDip(candidateBeforeValidation, imageSize, display) : null;
+    const roundTrip = candidateBeforeValidation ? validateAreaMapping(candidateBeforeValidation, imageSize, display.bounds) : { valid: false, roundTrip: null };
+    let confirmedBySecondFrame = false;
+    if (validation.valid && (validation.status === 'accepted-low-confidence' || (result.bestCandidate.score || 0) < 70)) {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      const secondSources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) } });
+      const secondSource = secondSources.find((entry) => entry.display_id === String(display.id)) || secondSources[0];
+      if (secondSource) {
+        const secondSize = secondSource.thumbnail.getSize(); const secondImage = { width: secondSize.width, height: secondSize.height, data: secondSource.thumbnail.toBitmap(), pixelOrder: 'bgra' };
+        const secondResult = detectSubtitleArea(secondImage); const secondArea = secondResult.bestCandidate ? buildSubtitleEnvelope(secondImage, clampCaptureArea(secondResult.bestCandidate, secondSize)) : null;
+        const secondValidation = secondArea ? validateSubtitleCandidate(secondImage, secondArea) : { valid: false, reason: 'second-frame-not-found' };
+        confirmedBySecondFrame = Boolean(secondValidation.valid && secondArea && isSimilarArea(candidateBeforeValidation, secondArea, 0.45));
+        if (!confirmedBySecondFrame) validation = { ...validation, valid: false, reason: 'second-frame-mismatch' };
+      } else validation = { ...validation, valid: false, reason: 'second-frame-unavailable' };
+    }
+    const detectorCandidate = result.bestCandidate && detectorSize.width ? { x: Math.round(result.bestCandidate.x * detectorSize.width / imageSize.width), y: Math.round(result.bestCandidate.y * detectorSize.height / imageSize.height), width: Math.round(result.bestCandidate.width * detectorSize.width / imageSize.width), height: Math.round(result.bestCandidate.height * detectorSize.height / imageSize.height) } : null;
+    lastDetectionSample = {
+      sourceImage: source.thumbnail.toPNG(), candidateImage: candidateBeforeValidation && validation.valid ? source.thumbnail.crop(candidateBeforeValidation).toPNG() : null,
+      status: { displayId: display.id, displayDipBounds: display.bounds, scaleFactor: scale, captureImage: imageSize, detectorImage: detectorSize, detectorArea: detectorCandidate, captureArea: candidateBeforeValidation, displayDipArea: candidateDip, activeOcrCaptureArea: getActiveOcrArea()?.area || null, activeOcrDisplayDipArea: getActiveOcrArea()?.anchorBoundsDip || null, validation, coordinateRoundTrip: roundTrip, secondFrameConfirmed: confirmedBySecondFrame, accepted: Boolean(result.found && validation.valid && roundTrip.valid), detectorLevel: result.metrics.fallbackUsed ? 1024 : 640 }
+    };
+    if (!result.found || !validation.valid || !roundTrip.valid) {
       detectedSubtitleBoundsDip = null;
+      detectedSubtitleDisplayId = null;
+      detectedSubtitleLocalArea = null;
+      detectedSubtitleCaptureSize = null;
       updateDeveloperSubtitleCandidateZone();
-      sendDeveloperStatus(`Detection: not found (${Math.round(result.metrics.durationMs)} ms, ${result.candidates.length} candidates)`);
+      if (tracking) subtitleAreaTracker.dispatch('candidateNotFound');
+      sendTrackingStatus(`Detection: not found (${validation.reason || 'no-candidate'})`);
       return { ok: true, found: false, metrics: { captureMs, detectorMs: result.metrics.durationMs, totalMs, candidates: 0 } };
     }
-    detectedSubtitleBoundsDip = subtitleCandidateBoundsDip(result.bestCandidate, imageSize, display);
+    if (requestId !== subtitleDetectionRequestId) return { ok: false, error: 'STALE_DETECTION' };
+    detectedSubtitleLocalArea = candidateBeforeValidation;
+    detectedSubtitleCaptureSize = { ...imageSize };
+    detectedSubtitleBoundsDip = candidateDip;
+    detectedSubtitleDisplayId = display.id;
     updateDeveloperSubtitleCandidateZone();
-    const candidate = result.bestCandidate;
-    sendDeveloperStatus(`Detection: found score ${candidate.score}, confidence ${candidate.confidence}, ${Math.round(candidate.width)}x${Math.round(candidate.height)}, ${Math.round(result.metrics.durationMs)} ms, ${result.candidates.length} candidates`);
+    const candidate = candidateBeforeValidation;
+    if (tracking) acceptTrackedCandidate(candidateBeforeValidation, imageSize, display);
+    sendTrackingStatus(`Detection: found score ${candidate.score}, confidence ${candidate.confidence}, ${Math.round(candidate.width)}x${Math.round(candidate.height)}, ${Math.round(result.metrics.durationMs)} ms, ${result.candidates.length} candidates`);
     return { ok: true, found: true, metrics: { captureMs, detectorMs: result.metrics.durationMs, totalMs, candidates: result.candidates.length } };
   } catch (error) {
     detectedSubtitleBoundsDip = null;
+    detectedSubtitleDisplayId = null;
+    detectedSubtitleLocalArea = null;
+    detectedSubtitleCaptureSize = null;
     updateDeveloperSubtitleCandidateZone();
-    sendDeveloperStatus('Detection: not found');
+    if (tracking) subtitleAreaTracker.dispatch('candidateNotFound');
+    sendTrackingStatus('Detection: not found');
     return { ok: false, error: 'DETECTION_FAILED' };
   } finally {
+    const duration = performance.now() - actionStartedAt;
+    subtitleTrackingMetrics.globalSearches += 1;
+    subtitleTrackingMetrics.recentGlobalSearches.push(performance.now());
+    subtitleTrackingMetrics.recentGlobalSearches = subtitleTrackingMetrics.recentGlobalSearches.filter((time) => performance.now() - time < 60000);
+    subtitleTrackingMetrics.totalSearchMs += duration;
     subtitleDetectionBusy = false;
+    if (tracking && subtitleAreaTracker.state === STATES.LOST) scheduleTrackedSearch();
   }
+}
+
+function acceptTrackedCandidate(candidate, captureSize, display) {
+  const candidateDip = captureAreaToDisplayDipArea(candidate, captureSize, display.bounds);
+  const previous = automaticOcrAnchorBoundsDip || lastAutomaticBoundsDip;
+  if (previous && !isSimilarArea(previous, candidateDip)) {
+    if (!pendingDistantCandidate || !isSimilarArea(pendingDistantCandidate, candidateDip)) {
+      pendingDistantCandidate = candidateDip;
+      scheduleTrackedSearch();
+      return false;
+    }
+  }
+  pendingDistantCandidate = null;
+  subtitleAreaTracker.dispatch('candidateFound');
+  setAutomaticAreaFromCandidate(candidate, captureSize, display, { reacquired: Boolean(previous) });
+  return true;
+}
+
+function scheduleTrackedSearch() {
+  if (subtitleDetectionBusy || subtitleDetectionRetryTimer || subtitleAreaTracker.state !== STATES.LOST) return;
+  subtitleDetectionRetryTimer = setTimeout(async () => {
+    subtitleDetectionRetryTimer = null;
+    if (subtitleAreaTracker.state === STATES.LOST) await findSubtitleArea({ tracking: true });
+  }, 2000);
+}
+
+ipcMain.handle('find-subtitle-area', () => findSubtitleArea());
+ipcMain.handle('use-detected-subtitle-area', () => {
+  const display = detectedSubtitleDisplayId ? screen.getAllDisplays().find((entry) => entry.id === detectedSubtitleDisplayId) : null;
+  if (!detectedSubtitleBoundsDip || !display) return { ok: false, error: 'NO_DETECTED_AREA' };
+  subtitleAreaTracker.dispatch('candidateFound');
+  if (!detectedSubtitleLocalArea || !detectedSubtitleCaptureSize) return { ok: false, error: 'NO_DETECTED_AREA' };
+  setAutomaticAreaFromCandidate(detectedSubtitleLocalArea, detectedSubtitleCaptureSize, display);
+  detectedSubtitleBoundsDip = null;
+  detectedSubtitleDisplayId = null;
+  detectedSubtitleLocalArea = null;
+  detectedSubtitleCaptureSize = null;
+  updateDeveloperSubtitleCandidateZone();
+  sendTrackingStatus('Auto area locked');
+  return { ok: true, area: ocrArea, tracking: trackingDetails() };
 });
+ipcMain.handle('stop-auto-tracking', () => { stopAutomaticTracking(); return { ok: true, area: ocrArea, tracking: trackingDetails() }; });
 
 ipcMain.handle('ocr-debug-metrics', (_event, metrics) => {
   ocrMetrics.record(metrics);

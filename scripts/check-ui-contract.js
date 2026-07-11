@@ -34,6 +34,17 @@ for (const [name, section] of Object.entries(contract)) {
     const actualType = tag === 'input' ? (attrs.type || 'text').toLowerCase() : tag;
     if (actualType !== expectedType) errors.push(`${name}: #${id} must be ${expectedType}, found ${actualType}`);
   }
+  if (section.accordions) {
+    for (const name of section.accordions) {
+      const header = html.match(new RegExp(`<[^>]+class=["'][^"']*accordionHeader[^"']*["'][^>]*data-section=["']${name}["'][^>]*>`, 'i'));
+      const bodyId = `section${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+      const body = html.match(new RegExp(`<[^>]+id=["']${bodyId}["'][^>]*>`, 'i'));
+      if (!header || !body) errors.push(`${name}: missing accordion ${name}`);
+      if (header && /\bopen\b/i.test(header[0])) errors.push(`${name}: accordion ${name} must not be open in HTML`);
+      if (body && /\bopen\b/i.test(body[0])) errors.push(`${name}: accordion body ${name} must not be open in HTML`);
+    }
+    if (section.accordionInitialState === 'closed' && /section\s*===\s*['"]display['"]/.test(fs.readFileSync(path.resolve(htmlDir, section.js.find((entry) => entry.endsWith('.js'))), 'utf8'))) errors.push(`${name}: Display mode must not be opened by JavaScript`);
+  }
 }
 
 if (errors.length) {

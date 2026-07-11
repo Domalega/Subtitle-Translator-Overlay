@@ -371,3 +371,26 @@ test('a timed out frame releases busy and the latest pending frame is recognized
   assert.equal(coordinator.isBusy, false);
   assert.equal(calls, 2);
 });
+
+test('accepts and translates the same text again after confirmed absence', async () => {
+  const scheduler = createScheduler(); let translations = 0;
+  const { coordinator, output } = createCoordinator({ scheduler, translate: async () => `translation-${++translations}` });
+  coordinator.processText('Welcome back.', 90, 0, { imageChanged: true }); scheduler.runNext(); await new Promise(resolve => setTimeout(resolve, 0));
+  coordinator.processText('', 0, 0, { imageChanged: true });
+  coordinator.processText('', 0, 0, { forced: true });
+  assert.equal(coordinator.subtitleState, 'absent');
+  coordinator.processText('Welcome back.', 90, 0, { imageChanged: true }); scheduler.runNext(); await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(translations, 2);
+  assert.equal(output.translation, 'translation-2');
+});
+
+test('continuous interval remains scheduled after accepted subtitles', async () => {
+  const scheduler = createScheduler(); let calls = 0;
+  const { coordinator } = createCoordinator({ scheduler, readOcr: async () => ['First subtitle.', 'Second subtitle.', 'Third subtitle.'][calls++] || '' });
+  await coordinator.start();
+  scheduler.runNext(); await new Promise(resolve => setTimeout(resolve, 0));
+  coordinator.processText('Second subtitle.', 90, coordinator.generation, { imageChanged: true });
+  scheduler.runNext();
+  assert.ok(scheduler.pendingCount() >= 1);
+  coordinator.stop();
+});

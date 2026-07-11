@@ -197,6 +197,22 @@ label {
   display: none;
 }
 
+.developerTools {
+  display: grid;
+  gap: 7px;
+  padding: 9px 11px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  -webkit-app-region: no-drag;
+}
+
+.developerTools[hidden] { display: none; }
+.developerToolsHeader { color: var(--soft-text); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.developerStatus { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.developerButtons { display: flex; flex-wrap: wrap; gap: 7px; }
+.developerButtons button { padding: 5px 9px; font-size: 12px; }
+
 .dictionaryPanel {
   display: flex;
   flex-direction: column;
@@ -468,6 +484,7 @@ label {
 .focusMode .mainHeader .appTitle,
 .focusMode .mainHeader .headerButtons button:not(#playPause):not(#focusToggle),
 .focusMode .status,
+.focusMode .developerTools,
 .focusMode .settingsPanel,
 .focusMode .dictionaryPanel {
   display: none;

@@ -37,6 +37,14 @@ function createMetadata(sample) {
     createdAt: nullableString(sample.createdAt),
     appVersion: nullableString(sample.appVersion),
     captureMode: ['manual', 'automatic'].includes(sample.captureMode) ? sample.captureMode : null,
+    tracking: {
+      state: nullableString(sample.tracking?.state),
+      reacquireCount: nullableNumber(sample.tracking?.reacquireCount),
+      areaSource: ['manual', 'automatic'].includes(sample.tracking?.areaSource) ? sample.tracking.areaSource : null,
+      lineCountEstimate: nullableNumber(sample.tracking?.lineCountEstimate),
+      areaAdapted: nullableBoolean(sample.tracking?.areaAdapted),
+      adaptationReason: nullableString(sample.tracking?.adaptationReason)
+    },
     ocrArea: nullableArea(sample.ocrArea),
     screen: {
       width: nullableNumber(sample.screen?.width),
@@ -85,6 +93,14 @@ class OcrDiagnosticSampleService {
       createdAt: new Date(this.now()).toISOString(),
       appVersion: this.getAppVersion(),
       captureMode: sample.captureMode,
+      tracking: {
+        state: nullableString(sample.tracking?.state),
+        reacquireCount: nullableNumber(sample.tracking?.reacquireCount),
+        areaSource: ['manual', 'automatic'].includes(sample.tracking?.areaSource) ? sample.tracking.areaSource : null,
+        lineCountEstimate: nullableNumber(sample.tracking?.lineCountEstimate),
+        areaAdapted: nullableBoolean(sample.tracking?.areaAdapted),
+        adaptationReason: nullableString(sample.tracking?.adaptationReason)
+      },
       ocrArea: nullableArea(sample.ocrArea),
       screen: {
         width: nullableNumber(sample.screen?.width),

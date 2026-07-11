@@ -5,8 +5,6 @@ const dictionaryOpenButton = document.getElementById('dictionaryOpen');
 const focusToggleButton = document.getElementById('focusToggle');
 const gameModeToggleButton = document.getElementById('gameModeToggle');
 const settingsToggleButton = document.getElementById('settingsToggle');
-const saveOcrSampleButton = document.getElementById('saveOcrSample');
-const openOcrDiagnosticsButton = document.getElementById('openOcrDiagnostics');
 const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
 const russianTextElement = document.getElementById('russianText');
@@ -244,13 +242,6 @@ ocrOnceButton.addEventListener('click', () => screenOcrCoordinator.readOnce());
 addWordButton.addEventListener('click', addSelectedWord);
 dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDictionaryWindow());
 settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
-saveOcrSampleButton.addEventListener('click', async () => {
-  const result = await window.overlayApi.saveOcrDiagnosticSample();
-  statusElement.textContent = result?.ok ? 'OCR sample saved' : result?.error === 'NO_COMPLETED_OCR_SAMPLE' ? 'No completed OCR sample' : 'Failed to save OCR sample';
-});
-openOcrDiagnosticsButton.addEventListener('click', async () => {
-  if (!await window.overlayApi.openOcrDiagnosticsFolder()) statusElement.textContent = 'Failed to save OCR sample';
-});
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
   if (key === 'displayMode') outputRouter.setDisplayMode(value);
@@ -389,8 +380,6 @@ let activeOcrProgressRequest = null;
 let developerModeEnabled = false;
 function setDeveloperMode(enabled) {
   developerModeEnabled = enabled;
-  saveOcrSampleButton.hidden = !enabled;
-  openOcrDiagnosticsButton.hidden = !enabled;
   document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled } }));
 }
 window.overlayApi.onOcrProgress((event) => {
@@ -401,9 +390,6 @@ window.overlayApi.onOcrProgress((event) => {
     activeOcrProgressRequest = null;
     if (isOcrRunning) statusElement.textContent = 'Screen OCR: running';
   }
-});
-window.overlayApi.onDeveloperStatus((event) => {
-  if (developerModeEnabled && typeof event?.stage === 'string') statusElement.textContent = event.stage;
 });
 
 window.overlayApi.onOcrAreaChanged((area) => {

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('overlayApi', {
       capturedAt: Number(frame?.capturedAt),
       imageChanged: Boolean(frame?.imageChanged),
       forced: Boolean(frame?.forced),
+      textLike: Boolean(frame?.textLike),
       image: frame?.image
     };
     if (process.env.OCR_DEBUG === '1') {
@@ -28,8 +29,11 @@ contextBridge.exposeInMainWorld('overlayApi', {
   recordOcrMetrics: (metrics) => ipcRenderer.invoke('ocr-debug-metrics', metrics),
   recordOcrDiagnosticUpdate: (update) => ipcRenderer.invoke('record-ocr-diagnostic-update', update),
   saveOcrDiagnosticSample: () => ipcRenderer.invoke('save-ocr-diagnostic-sample'),
+  saveDetectionSample: () => ipcRenderer.invoke('save-detection-sample'),
   openOcrDiagnosticsFolder: () => ipcRenderer.invoke('open-ocr-diagnostics-folder'),
   findSubtitleArea: () => ipcRenderer.invoke('find-subtitle-area'),
+  useDetectedSubtitleArea: () => ipcRenderer.invoke('use-detected-subtitle-area'),
+  stopAutoTracking: () => ipcRenderer.invoke('stop-auto-tracking'),
   selectOcrArea: () => ipcRenderer.invoke('select-ocr-area'),
   completeOcrArea: (area) => ipcRenderer.invoke('complete-ocr-area', area),
   cancelOcrArea: () => ipcRenderer.invoke('cancel-ocr-area'),
@@ -96,6 +100,12 @@ contextBridge.exposeInMainWorld('overlayApi', {
   },
   onDeveloperOcrZoneTheme: (callback) => {
     ipcRenderer.on('developer-ocr-zone-theme', (_event, color) => callback(color));
+  },
+  onDeveloperOcrZoneStyle: (callback) => {
+    ipcRenderer.on('developer-ocr-zone-style', (_event, style) => callback(style));
+  },
+  onDeveloperOcrZoneState: (callback) => {
+    ipcRenderer.on('developer-ocr-zone-state', (_event, state) => callback(state));
   },
   onDeveloperSubtitleCandidateState: (callback) => {
     ipcRenderer.on('developer-subtitle-candidate-state', (_event, state) => callback(state));

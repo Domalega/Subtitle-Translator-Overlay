@@ -13,3 +13,4 @@ release/
 
 # Node
 node_modules/
+/AGENT.md

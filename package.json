@@ -17,7 +17,8 @@
     "verify": "npm run check:files && npm run check:ui && npm test && npm run test:ui && npm run check:js && git diff --check",
     "prebuild": "npm run verify",
     "build": "electron-builder --win portable",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "benchmark:detection": "node scripts/benchmark-subtitle-detection.js"
   },
   "author": "Domalega",
   "build": {

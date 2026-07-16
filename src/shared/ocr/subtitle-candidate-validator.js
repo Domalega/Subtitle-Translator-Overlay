@@ -31,17 +31,54 @@ function validateSubtitleCandidate(image, candidate) {
 }
 function buildSubtitleEnvelope(image, seed) {
   const area = clampLocalArea(seed, image); const order = image.pixelOrder === 'bgra' ? 'bgra' : 'rgba';
-  const top = Math.max(0, area.y - Math.max(16, area.height * 3)); const bottom = Math.min(image.height, area.y + area.height + Math.max(16, area.height * 3)); const rows = [];
+  const maxWidth = Math.max(1, Math.floor(image.width * 0.78)); const maxHeight = Math.max(1, Math.floor(image.height * 0.18));
+  const verticalPad = Math.max(16, area.height * 3); const top = Math.max(0, Math.floor(area.y - verticalPad)); const bottom = Math.min(image.height, Math.ceil(area.y + area.height + verticalPad));
+  const maxSegmentGap = Math.max(8, Math.ceil(area.width * 0.16), Math.ceil(image.width * 0.025)); const minRunPixels = 2; const minSegmentPixels = Math.max(3, Math.ceil(area.width * 0.025));
+  const rows = [];
   for (let y = top; y < bottom; y += 1) {
-    let left = image.width; let right = -1; let count = 0;
-    for (let x = 0; x < image.width; x += 1) if (bright(image.data, (y * image.width + x) * 4, order)) { left = Math.min(left, x); right = Math.max(right, x); count += 1; }
-    if (right >= left && count >= Math.max(3, image.width * 0.002)) rows.push({ y, left, right });
+    const segments = []; let runStart = -1; let runPixels = 0; let segment = null;
+    for (let x = 0; x < image.width; x += 1) {
+      if (bright(image.data, (y * image.width + x) * 4, order)) { if (runStart < 0) runStart = x; runPixels += 1; }
+      else if (runStart >= 0) {
+        if (runPixels >= minRunPixels) {
+          if (segment && runStart - segment.right <= maxSegmentGap) { segment.right = x - 1; segment.pixels += runPixels; }
+          else { segment = { y, left: runStart, right: x - 1, pixels: runPixels }; segments.push(segment); }
+        }
+        runStart = -1; runPixels = 0;
+      }
+    }
+    if (runStart >= 0 && runPixels >= minRunPixels) {
+      if (segment && runStart - segment.right <= maxSegmentGap) { segment.right = image.width - 1; segment.pixels += runPixels; }
+      else segments.push({ y, left: runStart, right: image.width - 1, pixels: runPixels });
+    }
+    const denseSegments = segments.filter((segment) => {
+      const width = segment.right - segment.left + 1; const density = segment.pixels / Math.max(1, width);
+      return segment.pixels >= minSegmentPixels && width <= maxWidth && density >= 0.08;
+    });
+    if (denseSegments.length) rows.push({ y, segments: denseSegments });
   }
-  const groups = [];
-  for (const row of rows) { const group = groups[groups.length - 1]; if (group && row.y <= group.bottom + 3) { group.bottom = row.y; group.left = Math.min(group.left, row.left); group.right = Math.max(group.right, row.right); } else groups.push({ top: row.y, bottom: row.y, left: row.left, right: row.right }); }
-  const seedCenter = area.y + area.height / 2; const related = groups.filter((group) => Math.abs((group.top + group.bottom) / 2 - seedCenter) <= Math.max(36, area.height * 4)).slice(0, 3);
+  const seedLeft = area.x; const seedRight = area.x + area.width - 1; const seedCenterX = area.x + area.width / 2; const groups = [];
+  const overlaps = (aLeft, aRight, bLeft, bRight, gap) => aLeft <= bRight + gap && bLeft <= aRight + gap;
+  for (const row of rows) {
+    for (const segment of row.segments) {
+      let best = null;
+      for (const group of groups) if (row.y <= group.bottom + 3 && overlaps(segment.left, segment.right, group.left, group.right, maxSegmentGap)) { best = group; break; }
+      if (best) { best.bottom = row.y; best.left = Math.min(best.left, segment.left); best.right = Math.max(best.right, segment.right); best.pixels += segment.pixels; best.rows += 1; }
+      else groups.push({ top: row.y, bottom: row.y, left: segment.left, right: segment.right, pixels: segment.pixels, rows: 1 });
+    }
+  }
+  const seedCenterY = area.y + area.height / 2; const related = groups.filter((group) => {
+    const width = group.right - group.left + 1; const height = group.bottom - group.top + 1; const density = group.pixels / Math.max(1, width * height);
+    const nearSeedY = Math.abs((group.top + group.bottom) / 2 - seedCenterY) <= Math.max(36, area.height * 4);
+    const linkedToSeedX = overlaps(group.left, group.right, seedLeft, seedRight, Math.max(maxSegmentGap, area.width * 1.5)) || (seedCenterX >= group.left && seedCenterX <= group.right);
+    return nearSeedY && linkedToSeedX && width <= maxWidth && height <= maxHeight && density >= 0.025;
+  }).sort((a, b) => Math.abs((a.top + a.bottom) / 2 - seedCenterY) - Math.abs((b.top + b.bottom) / 2 - seedCenterY)).slice(0, 3);
   if (!related.length) return area;
-  const left = Math.min(...related.map((group) => group.left)); const right = Math.max(...related.map((group) => group.right)); const envelope = { x: Math.max(0, left - 8), y: Math.max(0, Math.min(...related.map((group) => group.top)) - 6), width: Math.min(image.width, right + 9) - Math.max(0, left - 8), height: Math.min(image.height, Math.max(...related.map((group) => group.bottom)) + 7) - Math.max(0, Math.min(...related.map((group) => group.top)) - 6) };
-  return clampLocalArea(envelope, image);
+  let left = Math.min(...related.map((group) => group.left)); let right = Math.max(...related.map((group) => group.right)); let y = Math.max(0, Math.min(...related.map((group) => group.top)) - 6); let bottomY = Math.min(image.height, Math.max(...related.map((group) => group.bottom)) + 7);
+  if (right - left + 1 > maxWidth) { const center = Math.round((Math.max(left, seedLeft) + Math.min(right, seedRight)) / 2); left = Math.max(0, center - Math.floor(maxWidth / 2)); right = Math.min(image.width - 1, left + maxWidth - 1); left = Math.max(0, right - maxWidth + 1); }
+  if (bottomY - y > maxHeight) { const center = Math.round(seedCenterY); y = Math.max(0, center - Math.floor(maxHeight / 2)); bottomY = Math.min(image.height, y + maxHeight); y = Math.max(0, bottomY - maxHeight); }
+  let envelopeLeft = Math.max(0, left - 8); let envelopeRight = Math.min(image.width, right + 9);
+  if (envelopeRight - envelopeLeft > maxWidth) { const center = Math.round(seedCenterX); envelopeLeft = Math.max(0, center - Math.floor(maxWidth / 2)); envelopeRight = Math.min(image.width, envelopeLeft + maxWidth); envelopeLeft = Math.max(0, envelopeRight - maxWidth); }
+  return clampLocalArea({ x: envelopeLeft, y, width: envelopeRight - envelopeLeft, height: bottomY - y }, image);
 }
 module.exports = { validateSubtitleCandidate, buildSubtitleEnvelope };

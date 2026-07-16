@@ -6,8 +6,10 @@ Electron desktop overlay for reading English text from a selected screen area wi
 
 ### Screen OCR
 - Select an OCR area from `Settings` with `Select OCR area`.
+- Use `Find subtitles` to let the app search the current screen for a likely subtitle area, then lock the detected area for OCR.
 - Use `Read once` to read the selected area one time.
 - Use `Start` / `Stop` to scan the selected area continuously once per second.
+- During continuous OCR, the automatic subtitle area can expand to include a second line above or below the locked area, waits for confirmation before weak expansions, clamps growth to the screen, and shrinks back only after the extra line has been absent for a stable delay.
 - Shows recognized English text in the left column and Russian translation in the right column.
 - OCR translation results are cached locally in the renderer to reduce repeated translation requests.
 
@@ -33,7 +35,7 @@ Electron desktop overlay for reading English text from a selected screen area wi
 - `Confirm before deleting words` controls dictionary delete confirmation.
 - `Context examples count` controls how many context examples are requested.
 - `Focus mode` hides non-essential controls in the main overlay.
-- `Developer mode` shows the selected OCR area and the current OCR processing stage for diagnostics.
+- `Developer mode` shows the selected OCR area, automatic subtitle candidate overlays, OCR stage, metrics, and lets you save diagnostic samples for subtitle detection troubleshooting.
 
 ### Game Mode
 - Enable `Game mode` in the main window.
@@ -67,9 +69,16 @@ For a portable Windows executable, run `npm run build`. The output is written to
 
 ### Continuous Screen OCR
 1. Open `Settings`.
-2. Click `Select OCR area` and drag over the original English subtitle/text area.
+2. Either click `Select OCR area` and drag over the original English subtitle/text area, or click `Find subtitles` to run automatic subtitle area detection on the current screen.
 3. Click `Read once` for a single OCR pass, or `Start` for continuous scanning.
-4. Click `Stop` to stop continuous scanning.
+4. When automatic detection is used, leave the detected area locked while subtitles play; the app tracks short disappearances and can re-run global search if the area is lost.
+5. Click `Stop` to stop continuous scanning.
+
+### Automatic Subtitle Area Detection
+1. Open the video or game scene that contains English subtitles.
+2. Click `Find subtitles` from the OCR controls.
+3. If a candidate is found, start continuous OCR. The app prefers centered subtitle-like text, rejects corner HUD text, sparse noise, icons, and oversized bright regions, and can fall back to a higher-resolution pass for very small subtitles.
+4. If no candidate is found, manually select the OCR area and try again when subtitles are visible.
 
 ### Near Original Subtitles
 1. Select the OCR area in `Settings`.
@@ -92,6 +101,7 @@ For a portable Windows executable, run `npm run build`. The output is written to
 - OCR works only after an OCR area has been selected.
 - The current version is oriented around the primary monitor.
 - OCR quality depends on subtitle/text size, color, contrast, and background.
+- Automatic subtitle detection works best with visible, centered subtitles and may need manual area selection for unusual layouts, stylized fonts, low contrast, or UI text that looks like subtitles.
 - Game mode currently works through the configured hotkey.
 - Live Scan for Game OCR is not currently available in the UI.
 - SRT loading exists in code but is not available from the current interface.

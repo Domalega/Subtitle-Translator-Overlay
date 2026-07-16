@@ -10,7 +10,7 @@
     "start": "electron .",
     "check:files": "node scripts/check-files.js",
     "check:ui": "node scripts/check-ui-contract.js && node scripts/check-protected-ui.js",
-    "test": "node --test test/unit/**/*.test.js",
+    "test": "node --test test/unit/*.test.js test/unit/**/*.test.js",
     "test:ui": "node test/integration/ui-windows-smoke.js",
     "check:js": "node scripts/check-js.js",
     "check:detection-samples": "node scripts/check-detection-samples.js",

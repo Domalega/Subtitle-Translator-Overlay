@@ -6,11 +6,10 @@
   function cleanScreenOcrText(text) {
     const cleaned = String(text || '')
       .replace(/[|_{}[\]<>~`^]/g, '')
-      .replace(/\b(?:ENGLISH|RUSSIAN|Screen OCR|Click-through|Open SRT|Hide controls|Offset|Start)\b/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
 
-    return cleaned.replace(/^[^A-Za-z[("']+/, '').trim();
+    return cleaned;
   }
 
   function normalizeOcrText(text) {
@@ -39,7 +38,7 @@
     const singleLetters = words.filter(word => word.length === 1).length;
     const confidenceIsLow = Number.isFinite(confidence) && confidence < 35;
     const hasShortValidPhrase = /^(?:no|go|wait|run|help|yes)[.!?]?$/i.test(value);
-    const isValid = hasShortValidPhrase || (
+    const isValid = (hasShortValidPhrase && !confidenceIsLow) || (
       isLikelySubtitle(value)
       && words.length > 0
       && singleLetters / words.length < 0.5
@@ -54,6 +53,8 @@
   function isSimilarText(a, b) {
     if (a === b) return true;
     if (!a || !b) return false;
+    const meaningTokens = value => value.toLowerCase().match(/\b(?:no|not|never|without|cannot|can't|won't|don't|doesn't|isn't|wasn't)\b|\d+/g) || [];
+    if (JSON.stringify(meaningTokens(a)) !== JSON.stringify(meaningTokens(b))) return false;
     const maxLen = Math.max(a.length, b.length);
     if (maxLen < 20) return false;
     const minLen = Math.min(a.length, b.length);
@@ -66,6 +67,9 @@
     for (const word of setA) {
       if (setB.has(word)) intersection += 1;
     }
+    const commonA = wordsA.filter(word => setB.has(word)).filter((word, index, all) => index === 0 || word !== all[index - 1]);
+    const commonB = wordsB.filter(word => setA.has(word)).filter((word, index, all) => index === 0 || word !== all[index - 1]);
+    if (commonA.join(' ') !== commonB.join(' ')) return false;
     const union = setA.size + setB.size - intersection;
     if (union === 0) return false;
     return (intersection / union) >= 0.75;
@@ -77,8 +81,8 @@
 
   function compareSubtitleText(normalizedText, previousText) {
     if (normalizedText === previousText) return 'same';
-    if (isSimilarText(normalizedText, previousText)) return 'similar';
     if (isGrowingSubtitle(normalizedText, previousText)) return 'growing';
+    if (isSimilarText(normalizedText, previousText)) return 'similar';
     return 'new';
   }
 

@@ -11,6 +11,11 @@
       this.visible = false;
     }
 
+    invoke(name, ...args) {
+      try { Promise.resolve(this.dependencies[name](...args)).catch(error => this.dependencies.onError?.(error)); }
+      catch (error) { this.dependencies.onError?.(error); }
+    }
+
     showRecognizedText(text) { this.lastSourceText = typeof text === 'string' ? text : ''; }
     showTranslationPending(sourceText) { if (typeof sourceText === 'string') this.lastSourceText = sourceText; }
 
@@ -19,7 +24,7 @@
       if (typeof translatedText !== 'string' || !translatedText.trim()) return;
       this.lastTranslation = translatedText;
       this.visible = true;
-      this.dependencies.showOverlay({ text: translatedText });
+      this.invoke('showOverlay', { text: translatedText });
     }
 
     showTranslationError(_error) {}
@@ -29,16 +34,16 @@
       this.lastSourceText = '';
       this.lastTranslation = '';
       this.visible = false;
-      this.dependencies.clearOverlay();
+      this.invoke('clearOverlay');
     }
 
     setVisible(visible) {
       this.visible = Boolean(visible);
-      if (!this.visible) this.dependencies.hideOverlay();
-      else if (this.lastTranslation) this.dependencies.showOverlay({ text: this.lastTranslation });
+      if (!this.visible) this.invoke('hideOverlay');
+      else if (this.lastTranslation) this.invoke('showOverlay', { text: this.lastTranslation });
     }
 
-    setSettings(settings) { this.dependencies.updateOverlaySettings(settings); }
+    setSettings(settings) { this.invoke('updateOverlaySettings', settings); }
   }
 
   return { NearSourceOutput };

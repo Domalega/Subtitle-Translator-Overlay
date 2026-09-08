@@ -75,7 +75,14 @@ function adaptSubtitleArea({ area, screen, image, state = {}, now = 0, confirmFr
   }
   candidateState.pendingArea = null;
   if (candidateState.expanded) {
-    candidateState.noExtraSince = candidateState.noExtraSince || now;
+    const base = candidateState.baseArea;
+    const baseTop = base.y - originY;
+    const baseBottom = baseTop + base.height;
+    const extraLineStillVisible = bands.some(band => band.bottom < baseTop + 5 || band.top > baseBottom - 5);
+    if (extraLineStillVisible) {
+      return { area: current, changed: false, lineCountEstimate, expandedTop: false, expandedBottom: false, reason: 'additional-lines-present', state: { ...candidateState, noExtraSince: null, noExtraCount: 0 } };
+    }
+    candidateState.noExtraSince = candidateState.noExtraSince ?? now;
     candidateState.noExtraCount = (candidateState.noExtraCount || 0) + 1;
     if (now - candidateState.noExtraSince >= shrinkDelayMs && candidateState.noExtraCount >= confirmFrames + 1) {
       const base = candidateState.baseArea;

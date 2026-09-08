@@ -7,9 +7,9 @@ Electron desktop overlay for reading English text from a selected screen area wi
 ### Screen OCR
 - Select an OCR area from `Settings` with `Select OCR area`.
 - Use `Read once` to read the selected area one time.
-- Use `Start` / `Stop` to scan the selected area continuously once per second.
+- Use `Start` / `Stop` to check the selected area continuously every 200 ms; unchanged frames are skipped with periodic forced refreshes.
 - Shows recognized English text in the left column and Russian translation in the right column.
-- OCR translation results are cached locally in the renderer to reduce repeated translation requests.
+- Translation results are cached in the main process to reduce repeated translation requests.
 
 ### Display Modes
 - `Main panel` is the default mode and shows original and translation in the application window.
@@ -51,7 +51,7 @@ Electron desktop overlay for reading English text from a selected screen area wi
 
 1. Clone the repository: `git clone https://github.com/Domalega/Subtitle-Translator-Overlay.git`
 2. Navigate to the project directory: `cd Subtitle-Translator-Overlay`
-3. Install dependencies: `npm install`
+3. With Node.js >=24.13.0 installed, install dependencies: `npm ci`
 4. Run the application: `npm start`
 
 For a portable Windows executable, run `npm run build`. The output is written to `dist/`.
@@ -59,6 +59,10 @@ For a portable Windows executable, run `npm run build`. The output is written to
 ## Development Commands
 
 - `npm start`: run the Electron app.
+- `npm run verify`: run contracts, tests with coverage thresholds, real Electron/OCR smoke checks and syntax checks.
+- `npm run test:coverage`: cover all JavaScript under `src/`; open `coverage/index.html` for details.
+- `npm run test:ocr`: test offline OCR with the included synthetic fixture and local language model.
+- See [stage-1 audit](docs/audit-stage-1.md) for fixes, measured coverage and remaining validation.
 - `npm run check:files`: verify local Electron, HTML script, stylesheet, and package entry file references.
 - `npm run build`: build a portable Windows package.
 - `npm run dist`: build the configured Windows distribution target.

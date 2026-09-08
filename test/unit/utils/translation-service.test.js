@@ -22,14 +22,14 @@ test('TranslationService reports invalid JSON', async () => {
   await assert.rejects(() => service.translate('Hello'), (error) => error.code === 'INVALID_JSON');
 });
 
-test('TranslationService times out', async () => {
+test('TranslationService reports a distinct network timeout', async () => {
   const service = new TranslationService({
     timeoutMs: 5,
     fetch: (_url, options) => new Promise((_resolve, reject) => {
       options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
     })
   });
-  await assert.rejects(() => service.translate('Hello'), (error) => error.code === 'ABORTED');
+  await assert.rejects(() => service.translate('Hello'), (error) => error.code === 'TIMEOUT');
 });
 
 test('TranslationService supports AbortController', async () => {

@@ -42,6 +42,8 @@ let studyIndex = 0;
 let studyTranslationShown = false;
 let filteredEntries = [];
 let deleteConfirmEnabled = true;
+let renderRequestId = 0;
+let contextRequestId = 0;
 const { calculateDictionaryPageSize, createDictionaryPagination } = window.DictionaryPagination;
 
 function getPageSize() {
@@ -77,9 +79,19 @@ function escapeRegExp(value) {
 }
 
 function highlightWord(sentence, word) {
-  const escapedWord = escapeRegExp(word || '');
-  if (!escapedWord) return sentence;
-  return sentence.replace(new RegExp(`\\b(${escapedWord})\\b`, 'gi'), '<span class="highlight">$1</span>');
+  const fragment = document.createDocumentFragment();
+  const text = String(sentence || '');
+  const escaped = escapeRegExp(word || '');
+  if (!escaped) { fragment.append(document.createTextNode(text)); return fragment; }
+  const pattern = new RegExp('\\b(' + escaped + ')\\b', 'gi');
+  let offset = 0;
+  for (const match of text.matchAll(pattern)) {
+    fragment.append(document.createTextNode(text.slice(offset, match.index)));
+    const span = document.createElement('span'); span.className = 'highlight'; span.textContent = match[0];
+    fragment.append(span); offset = match.index + match[0].length;
+  }
+  fragment.append(document.createTextNode(text.slice(offset)));
+  return fragment;
 }
 
 function speakWord(word) {
@@ -113,7 +125,14 @@ function filterEntries(entries, query) {
 }
 
 async function renderDictionary() {
-  const allEntries = sortEntries(await window.overlayApi.dictionaryGet());
+  const requestId = ++renderRequestId;
+  let entries;
+  try { entries = await window.overlayApi.dictionaryGet(); } catch (error) {
+    if (requestId === renderRequestId) dictionaryList.textContent = `Could not load dictionary: ${error.message}`;
+    return;
+  }
+  if (requestId !== renderRequestId) return;
+  const allEntries = sortEntries(entries);
   const query = dictionarySearch.value.trim();
   filteredEntries = filterEntries(allEntries, query);
 
@@ -158,12 +177,18 @@ async function renderDictionary() {
     context.type = 'button';
     context.textContent = 'Context';
     context.addEventListener('click', async () => {
+      const requestId = ++contextRequestId;
       const word = entry.english || entry.sourceText;
       contextContent.textContent = '';
       contextContent.innerHTML = 'Loading context...';
       contextModal.classList.add('show');
 
-      const result = await window.overlayApi.getContextSentences(word);
+      let result;
+      try { result = await window.overlayApi.getContextSentences(word); } catch (error) {
+        if (requestId === contextRequestId) contextContent.textContent = `Could not load context: ${error.message}`;
+        return;
+      }
+      if (requestId !== contextRequestId || !contextModal.classList.contains('show')) return;
       contextContent.textContent = '';
       if (result.length === 0) {
         contextContent.textContent = 'No context sentences found for this word.';
@@ -173,7 +198,7 @@ async function renderDictionary() {
           contextEntry.className = 'contextEntry';
           const englishSentence = document.createElement('div');
           englishSentence.className = 'englishSentence';
-          englishSentence.innerHTML = highlightWord(s.english, word);
+          englishSentence.append(highlightWord(s.english, word));
           const russianTranslation = document.createElement('div');
           russianTranslation.className = 'russianTranslation';
           russianTranslation.textContent = s.russian;
@@ -190,7 +215,7 @@ async function renderDictionary() {
     remove.title = 'Delete word';
     remove.addEventListener('click', async () => {
       if (!deleteConfirmEnabled) {
-        await window.overlayApi.dictionaryDelete(entry.id);
+        try { await window.overlayApi.dictionaryDelete(entry.id); } catch (error) { dictionaryPageInfo.textContent = `Could not delete word: ${error.message}`; }
         return;
       }
       wordToDeleteId = entry.id;
@@ -222,6 +247,7 @@ function renderDictionaryAfterLayout() {
 }
 
 function hideModal(modalElement) {
+  if (modalElement === contextModal) contextRequestId += 1;
   modalElement.classList.remove('show');
 }
 
@@ -258,16 +284,22 @@ closeDeleteConfirmModalButton.addEventListener('click', () => hideModal(deleteCo
 cancelDeleteButton.addEventListener('click', () => hideModal(deleteConfirmModal));
 
 confirmDeleteButton.addEventListener('click', async () => {
-  if (wordToDeleteId && wordToDeleteElement) {
+  if (wordToDeleteId && wordToDeleteElement && !confirmDeleteButton.disabled) {
+    const deletedId = wordToDeleteId;
+    const deletedElement = wordToDeleteElement;
+    confirmDeleteButton.disabled = true;
     wordToDeleteElement.style.opacity = '0';
     wordToDeleteElement.style.transform = 'translateX(20px)';
     wordToDeleteElement.style.height = '0';
     wordToDeleteElement.style.overflow = 'hidden';
     window.setTimeout(async () => {
-      await window.overlayApi.dictionaryDelete(wordToDeleteId);
-      wordToDeleteId = null;
-      wordToDeleteElement = null;
-      hideModal(deleteConfirmModal);
+      try {
+        await window.overlayApi.dictionaryDelete(deletedId);
+        if (wordToDeleteId === deletedId) { wordToDeleteId = null; wordToDeleteElement = null; hideModal(deleteConfirmModal); }
+      } catch (error) {
+        deletedElement.removeAttribute('style');
+        wordToDeleteSpan.textContent = `Could not delete word: ${error.message}`;
+      } finally { confirmDeleteButton.disabled = false; }
     }, 220);
   }
 });
@@ -275,7 +307,7 @@ confirmDeleteButton.addEventListener('click', async () => {
 deleteConfirmModal.addEventListener('click', (e) => { if (e.target === deleteConfirmModal) hideModal(deleteConfirmModal); });
 
 studyButton.addEventListener('click', async () => {
-  const allEntries = await window.overlayApi.dictionaryGet();
+  const allEntries = await window.overlayApi.dictionaryGet().catch(error => { dictionaryPageInfo.textContent = error.message; return []; });
   studyWords = sortEntries(allEntries);
   if (studyWords.length === 0) return;
   studyIndex = 0;
@@ -285,6 +317,7 @@ studyButton.addEventListener('click', async () => {
 
 showTranslationBtn.addEventListener('click', () => {
   const entry = studyWords[studyIndex];
+  if (!entry) return;
   studyTranslationEl.textContent = entry.russian || '';
   showTranslationBtn.style.display = 'none';
   studyEasyBtn.style.display = '';
@@ -304,14 +337,18 @@ closeExportModal.addEventListener('click', () => hideModal(exportModal));
 exportModal.addEventListener('click', (e) => { if (e.target === exportModal) hideModal(exportModal); });
 
 exportCsvBtn.addEventListener('click', async () => {
-  const entries = await window.overlayApi.dictionaryGet();
-  await window.overlayApi.exportDictionary(entries, 'csv');
+  const entries = await window.overlayApi.dictionaryGet().catch(error => { dictionaryPageInfo.textContent = error.message; return null; });
+  if (!entries) return;
+  const exported = await window.overlayApi.exportDictionary(entries, 'csv').catch(error => { dictionaryPageInfo.textContent = error.message; return false; });
+  if (!exported) return;
   hideModal(exportModal);
 });
 
 exportJsonBtn.addEventListener('click', async () => {
-  const entries = await window.overlayApi.dictionaryGet();
-  await window.overlayApi.exportDictionary(entries, 'json');
+  const entries = await window.overlayApi.dictionaryGet().catch(error => { dictionaryPageInfo.textContent = error.message; return null; });
+  if (!entries) return;
+  const exported = await window.overlayApi.exportDictionary(entries, 'json').catch(error => { dictionaryPageInfo.textContent = error.message; return false; });
+  if (!exported) return;
   hideModal(exportModal);
 });
 

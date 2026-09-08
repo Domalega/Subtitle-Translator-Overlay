@@ -19,16 +19,16 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
 closeWindowButton.addEventListener('click', () => window.overlayApi.closeCurrentWindow());
 
-copyOriginal.addEventListener('click', () => {
-  navigator.clipboard.writeText(originalText.textContent);
-  statusElement.textContent = 'Original copied';
+copyOriginal.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(originalText.textContent); statusElement.textContent = 'Original copied'; }
+  catch (_) { statusElement.textContent = 'Could not copy text'; }
   statusElement.hidden = false;
   setTimeout(() => { statusElement.hidden = true; }, 1500);
 });
 
-copyTranslation.addEventListener('click', () => {
-  navigator.clipboard.writeText(translatedText.textContent);
-  statusElement.textContent = 'Translation copied';
+copyTranslation.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(translatedText.textContent); statusElement.textContent = 'Translation copied'; }
+  catch (_) { statusElement.textContent = 'Could not copy text'; }
   statusElement.hidden = false;
   setTimeout(() => { statusElement.hidden = true; }, 1500);
 });
@@ -63,7 +63,8 @@ function showResult(data) {
           english: w.english,
           russian: '',
           sourceText: w.english
-        });
+        }).catch(() => null);
+        if (!result) { addBtn.textContent = '+'; statusElement.hidden = false; statusElement.textContent = 'Could not add word'; return; }
         if (!result.duplicate) {
           addBtn.classList.add('saved');
           addBtn.textContent = '\u2713';

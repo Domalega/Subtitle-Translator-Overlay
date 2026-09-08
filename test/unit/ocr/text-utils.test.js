@@ -48,3 +48,19 @@ test('evaluateOcrResult accepts a normal long YouTube subtitle with line breaks 
 test('evaluateOcrResult rejects isolated Latin OCR glyph artifacts', () => {
   assert.equal(evaluateOcrResult({ text: 'A A H', confidence: 90 }).accepted, false);
 });
+
+test('cleanup preserves legitimate subtitle words, numbers and short low confidence is rejected', () => {
+  const { cleanScreenOcrText } = require('../../../src/shared/ocr/text-utils');
+  assert.equal(cleanScreenOcrText('Start speaking English in 2026.'), 'Start speaking English in 2026.');
+  assert.equal(cleanScreenOcrText('42 people arrived.'), '42 people arrived.');
+  assert.equal(evaluateOcrResult({ text: 'Go!', confidence: 5 }).accepted, false);
+});
+test('semantic changes in negation, numbers and word order are not OCR duplicates', () => {
+  assert.equal(isSimilarText('We should go to the large house now', 'We should not go to the large house now'), false);
+  assert.equal(isSimilarText('There are 20 people in the room', 'There are 30 people in the room'), false);
+  assert.equal(isSimilarText('The dog follows the cat outside today', 'The cat follows the dog outside today'), false);
+});
+test('a growing accepted subtitle is considered new content even when most words match', () => {
+  const { compareSubtitleText } = require('../../../src/shared/ocr/text-utils');
+  assert.equal(compareSubtitleText('This is a fairly long sentence already finished now', 'This is a fairly long sentence already finished'), 'growing');
+});

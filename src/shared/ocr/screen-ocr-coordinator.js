@@ -86,6 +86,8 @@
     }
 
     readOnce() {
+      if (this.captureBusy || this.isBusy) { this.output.setStatus('OCR is already reading. Wait a moment.'); return; }
+      if (!this.isRunning) { this.generation += 1; this.resetVolatileState(); this.stabilizer.reset(); }
       if (!this.captureFrame) return this.readLegacy({ scheduleNext: false, generation: this.generation });
       return this.capture({ scheduleNext: false, generation: this.generation, waitForOcr: true });
     }
@@ -134,13 +136,14 @@
             this.log('OCR started', { generation, frameId: frame.id });
             const result = await this.recognizeFrame(frame);
             this.log('OCR completed', { generation, frameId: frame.id, textLength: (result?.text || '').length, confidence: result?.confidence });
-            if (generation !== this.generation || frame.generation !== this.generation || this.queue.pending?.id > frame.id) {
+            if (result?.stale || generation !== this.generation || frame.generation !== this.generation) {
               this.discardedStaleResults += 1;
               continue;
             }
             this.processText(result?.text || '', result?.confidence, generation, {
               ...result?.metrics,
               frameId: frame.id,
+              capturedAt: frame.capturedAt,
               generation,
               ocrQueueWaitMs: queuedAt - frame.capturedAt,
               ocrConfidence: result?.confidence,
@@ -158,7 +161,7 @@
       } finally {
         this.isBusy = false;
         this.log('busy flags released', { generation, pending: Boolean(this.queue.pending) });
-        if (this.queue.pending && generation === this.generation) this.consume(generation);
+        if (this.queue.pending?.generation === this.generation) this.consume(this.generation);
       }
     }
 
@@ -202,6 +205,9 @@
       this.log('stabilizer ' + (result.candidate ? 'accepted' : 'rejected'), { reason: result.reason });
       this.onMetrics(diagnostic);
       if (!result.candidate) {
+        this.clearTimeout(this.candidateTimer);
+        this.candidateTimer = null;
+        if (result.reason === 'same' || result.reason === 'similar') { this.subtitleState = 'present'; this.emptyAfterChangeCount = 0; }
         this.updateAbsenceState(result, metrics);
         if (result.reason === 'same') this.output.setStatus('Same subtitle, already translated');
         else if (result.reason === 'similar') this.output.setStatus('Similar subtitle, reusing previous translation');
@@ -210,6 +216,7 @@
       }
       this.emptyAfterChangeCount = 0;
       this.subtitleState = 'present';
+      if (result.normalizedText !== this.latestTranslationKey) this.translationRequestId += 1;
       this.output.showRecognizedText(result.rawText);
       this.output.showTranslationPending(result.rawText);
       this.clearTimeout(this.candidateTimer);
@@ -240,7 +247,11 @@
         this.emptyAfterChangeCount = 0;
         this.translationRequestId += 1;
         this.latestTranslationKey = '';
-        this.output.hideOverlay();
+        this.clearTimeout(this.candidateTimer);
+        this.candidateTimer = null;
+        this.lastGoodEnglish = '';
+        this.lastAcceptedConfidence = undefined;
+        this.output.hideOverlay?.();
         this.stabilizer.reset();
         this.log('subtitle absent', { reason: 'confirmed-empty' });
       }
@@ -252,15 +263,21 @@
       this.log('translation started', { generation, requestId, textLength: displayText.length });
       const translatedAt = this.now();
       this.onDiagnosticUpdate({ frameId: metrics.frameId, translation: { requested: true, completed: false, durationMs: null } });
-      const cached = this.getCachedTranslation(normalizedKey);
-      if (cached) { if (generation === this.generation && normalizedKey === this.latestTranslationKey) { this.output.showTranslation(cached); this.log('translation completed', { generation, requestId, cached: true }); this.lastGoodRussian = cached; this.output.setStatus('Screen OCR: subtitle translated'); this.onDiagnosticUpdate({ frameId: metrics.frameId, translation: { requested: true, completed: true, durationMs: 0 } }); this.onMetrics({ ...metrics, translationMs: 0, acceptedToDisplayedMs: this.now() - translatedAt, totalMs: metrics.capturedAt ? this.now() - metrics.capturedAt : undefined }); } return; }
       try {
+      const cached = this.getCachedTranslation(normalizedKey);
+      if (cached) { if (generation === this.generation && normalizedKey === this.latestTranslationKey) { this.output.showTranslation(cached, displayText); this.log('translation completed', { generation, requestId, cached: true }); this.lastGoodRussian = cached; this.output.setStatus('Screen OCR: subtitle translated'); this.onDiagnosticUpdate({ frameId: metrics.frameId, translation: { requested: true, completed: true, durationMs: 0 } }); this.onMetrics({ ...metrics, translationMs: 0, acceptedToDisplayedMs: this.now() - translatedAt, totalMs: metrics.capturedAt ? this.now() - metrics.capturedAt : undefined }); } return; }
         const translation = await this.translate(displayText, { scope: 'screen-ocr' });
         if (generation !== this.generation || requestId !== this.translationRequestId || normalizedKey !== this.latestTranslationKey) return;
-        this.output.showTranslation(translation); this.log('translation completed', { generation, requestId, cached: false }); this.lastGoodRussian = translation; this.setCachedTranslation(normalizedKey, translation); this.output.setStatus('Screen OCR: subtitle translated');
+        this.output.showTranslation(translation, displayText); this.log('translation completed', { generation, requestId, cached: false }); this.lastGoodRussian = translation; this.setCachedTranslation(normalizedKey, translation); this.output.setStatus('Screen OCR: subtitle translated');
         this.onDiagnosticUpdate({ frameId: metrics.frameId, translation: { requested: true, completed: true, durationMs: this.now() - translatedAt } });
         this.onMetrics({ ...metrics, translationMs: this.now() - translatedAt, acceptedToDisplayedMs: this.now() - translatedAt, totalMs: metrics.capturedAt ? this.now() - metrics.capturedAt : undefined });
-      } catch (error) { if (generation === this.generation && requestId === this.translationRequestId && error?.code !== 'ABORTED' && error?.code !== 'STALE') this.output.showTranslationError('Translation failed'); }
+      } catch (error) {
+        if (generation === this.generation && requestId === this.translationRequestId && error?.code !== 'ABORTED' && error?.code !== 'STALE') {
+          this.stabilizer.lastAcceptedText = '';
+          this.latestTranslationKey = '';
+          this.output.showTranslationError('Translation failed');
+        }
+      }
     }
   }
   return { ScreenOcrCoordinator };

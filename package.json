@@ -10,14 +10,17 @@
     "start": "electron .",
     "check:files": "node scripts/check-files.js",
     "check:ui": "node scripts/check-ui-contract.js && node scripts/check-protected-ui.js",
-    "test": "node --test test/unit/**/*.test.js",
+    "test": "node scripts/run-tests.js",
     "test:ui": "node test/integration/ui-windows-smoke.js",
     "check:js": "node scripts/check-js.js",
     "check:detection-samples": "node scripts/check-detection-samples.js",
-    "verify": "npm run check:files && npm run check:ui && npm test && npm run test:ui && npm run check:js && git diff --check",
+    "verify": "npm run check:files && npm run check:ui && npm run test:coverage && npm run test:ui && npm run test:ocr && npm run check:js && git diff --check",
     "prebuild": "npm run verify",
     "build": "electron-builder --win portable",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "test:coverage": "node scripts/run-tests.js --coverage",
+    "test:ocr": "node test/integration/ocr-smoke.js",
+    "predist": "npm run verify"
   },
   "author": "Domalega",
   "build": {
@@ -29,7 +32,6 @@
     "files": [
       "src/**/*",
       "package.json",
-      "eng.traineddata",
       "node_modules/**/*"
     ],
     "asarUnpack": [
@@ -43,14 +45,25 @@
         "portable"
       ],
       "artifactName": "Subtitle-Translator-Overlay-${version}.${ext}"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "eng.traineddata",
+        "to": "eng.traineddata"
+      }
+    ]
   },
   "dependencies": {
     "pngjs": "^7.0.0",
-    "tesseract.js": "^5.1.1"
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
-    "electron-builder": "^24.13.3",
-    "electron": "^31.7.7"
+    "c8": "12.0.0",
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3",
+    "jsdom": "30.0.1"
+  },
+  "engines": {
+    "node": ">=24.13.0"
   }
 }

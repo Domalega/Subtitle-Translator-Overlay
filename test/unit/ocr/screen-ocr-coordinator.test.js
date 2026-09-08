@@ -394,3 +394,58 @@ test('continuous interval remains scheduled after accepted subtitles', async () 
   assert.ok(scheduler.pendingCount() >= 1);
   coordinator.stop();
 });
+
+test('a moving background does not starve completed OCR while a newer frame waits', async () => {
+  let finishFirst, finishSecond, captured = 0;
+  const { coordinator, output } = createCoordinator({
+    captureFrame: async () => ({ id: ++captured, capturedAt: 0, imageChanged: true }),
+    recognizeFrame: frame => new Promise(resolve => { if (frame.id === 1) finishFirst = resolve; else finishSecond = resolve; })
+  });
+  await coordinator.capture({ scheduleNext: false, generation: 0 });
+  await coordinator.capture({ scheduleNext: false, generation: 0 });
+  finishFirst({ text: 'First complete subtitle', confidence: 90 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(output.recognized, 'First complete subtitle');
+  finishSecond({ text: 'Second complete subtitle', confidence: 90 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(output.recognized, 'Second complete subtitle');
+  coordinator.stop();
+});
+test('stop/start consumes a new generation queued while the old recognition finishes', async () => {
+  let finishFirst, captured = 0;
+  const { coordinator, output } = createCoordinator({
+    captureFrame: async () => ({ id: ++captured, capturedAt: 0, imageChanged: true }),
+    recognizeFrame: frame => frame.id === 1 ? new Promise(resolve => { finishFirst = resolve; }) : Promise.resolve({ text: 'Current generation subtitle', confidence: 90 })
+  });
+  await coordinator.start(); coordinator.stop(); await coordinator.start();
+  finishFirst({ text: 'Obsolete subtitle', confidence: 90 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(output.recognized, 'Current generation subtitle');
+  coordinator.stop();
+});
+test('translation failure retries the same visible subtitle on the next OCR result', async () => {
+  let translations = 0;
+  const { coordinator, scheduler, output } = createCoordinator({ translate: async () => { if (++translations === 1) throw Error('offline'); return 'recovered'; } });
+  coordinator.processText('Same subtitle after network failure', 90, 0, { imageChanged: true });
+  scheduler.runNext(); await new Promise(resolve => setImmediate(resolve));
+  coordinator.processText('Same subtitle after network failure', 90, 0, { forced: true });
+  scheduler.runNext(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(output.translation, 'recovered'); assert.equal(translations, 2);
+});
+test('an empty frame cancels an unconfirmed candidate before translation', async () => {
+  let translations = 0;
+  const { coordinator, scheduler } = createCoordinator({ translate: async () => { translations++; return 'wrong'; } });
+  coordinator.processText('Transient subtitle candidate', 90, 0, { imageChanged: true });
+  coordinator.processText('', 0, 0, { imageChanged: true });
+  scheduler.runNext(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(translations, 0);
+});
+test('a repeated valid subtitle resets a tentative absence', async () => {
+  const { coordinator, scheduler } = createCoordinator();
+  coordinator.processText('A visible subtitle', 90, 0, { imageChanged: true }); scheduler.runNext();
+  await new Promise(resolve => setImmediate(resolve));
+  coordinator.processText('', 0, 0, { imageChanged: true });
+  coordinator.processText('A visible subtitle', 90, 0, { forced: true });
+  coordinator.processText('', 0, 0, { imageChanged: true });
+  assert.equal(coordinator.subtitleState, 'possible-absent');
+});

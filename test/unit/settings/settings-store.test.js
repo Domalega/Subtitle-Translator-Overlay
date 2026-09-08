@@ -50,3 +50,11 @@ test('Developer mode defaults off, persists true, and old settings remain compat
   assert.equal(normalizeUiSettings({ developerMode: true }).developerMode, true);
   assert.equal(normalizeUiSettings({ theme: 'blue' }).developerMode, false);
 });
+
+test('null, boolean, empty and array numeric settings restore defaults', () => {
+  for (const value of [null, true, '', [], {}]) {
+    const settings = normalizeUiSettings({ fontScale: value, nearSourceBackgroundOpacity: value });
+    assert.equal(settings.fontScale, 100);
+    assert.equal(settings.nearSourceBackgroundOpacity, 0.7);
+  }
+});

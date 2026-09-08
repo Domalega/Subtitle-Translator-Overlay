@@ -1,3 +1,8 @@
+const storage = {
+  getItem(key) { try { return localStorage.getItem(key); } catch (_) { return null; } },
+  setItem(key, value) { try { localStorage.setItem(key, value); } catch (_) {} },
+  removeItem(key) { try { localStorage.removeItem(key); } catch (_) {} }
+};
 const playPauseButton = document.getElementById('playPause');
 const ocrOnceButton = document.getElementById('ocrOnce');
 const addWordButton = document.getElementById('addWord');
@@ -35,8 +40,8 @@ const ocrIntervalMs = 200;
 const cachePrefix = 'subtitle-translation:';
 
 function parseTime(value) {
-  const match = value.trim().match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
-  if (!match) return 0;
+  const match = String(value || '').trim().match(/^(\d{2,}):([0-5]\d):([0-5]\d)[,.](\d{3})(?:\s|$)/);
+  if (!match) return null;
   const [, hours, minutes, seconds, millis] = match.map(Number);
   return ((hours * 60 + minutes) * 60 + seconds) * 1000 + millis;
 }
@@ -55,7 +60,7 @@ function parseSrt(content) {
       const text = lines.slice(timeLineIndex + 1).join('\n').replace(/<[^>]+>/g, '');
       return { start: parseTime(start), end: parseTime(end), text };
     })
-    .filter((cue) => cue && cue.text);
+    .filter((cue) => cue && cue.text && cue.start !== null && cue.end !== null && cue.end > cue.start).sort((a, b) => a.start - b.start);
 }
 
 function mediaTime() {
@@ -64,16 +69,16 @@ function mediaTime() {
 }
 
 function findCueIndex(time) {
-  return cues.findIndex((cue) => time >= cue.start && time <= cue.end);
+  return cues.findIndex((cue) => time >= cue.start && time < cue.end);
 }
 
 async function translate(text, options = {}) {
   const cacheKey = cachePrefix + text;
-  const cached = options.scope ? null : localStorage.getItem(cacheKey);
+  const cached = options.scope ? null : storage.getItem(cacheKey);
   if (cached) return cached;
 
   const translated = await window.overlayApi.translate(text, options.scope);
-  if (!options.scope) localStorage.setItem(cacheKey, translated);
+  if (!options.scope) storage.setItem(cacheKey, translated);
   return translated;
 }
 
@@ -127,6 +132,7 @@ async function addSelectedWord() {
 async function showCue(index) {
   currentIndex = index;
 
+  const requestIndex = index;
   if (index === -1) {
     englishTextElement.textContent = '';
     russianTextElement.textContent = '';
@@ -138,8 +144,10 @@ async function showCue(index) {
   russianTextElement.textContent = 'Translating...';
 
   try {
-    russianTextElement.textContent = await translate(cue.text);
+    const translated = await translate(cue.text);
+    if (currentIndex === requestIndex) russianTextElement.textContent = translated;
   } catch (error) {
+    if (currentIndex !== requestIndex) return;
     russianTextElement.textContent = 'Translation unavailable';
     statusElement.textContent = error.message;
   }
@@ -161,7 +169,7 @@ function setRunning(nextRunning) {
     startedAt = performance.now() - pausedAt;
     tick();
   } else {
-    pausedAt = mediaTime();
+    pausedAt = performance.now() - startedAt;
     window.cancelAnimationFrame(tickHandle);
   }
 }
@@ -169,9 +177,9 @@ function setRunning(nextRunning) {
 function getCachedTranslation(normalizedKey) {
   if (ocrTranslationCache.has(normalizedKey)) return ocrTranslationCache.get(normalizedKey);
   const localKey = 'ocr-norm-' + normalizedKey;
-  const cached = localStorage.getItem(localKey);
+  const cached = storage.getItem(localKey);
   if (cached) {
-    ocrTranslationCache.set(normalizedKey, cached);
+    setCachedTranslation(normalizedKey, cached);
     return cached;
   }
   return null;
@@ -186,11 +194,11 @@ function setCachedTranslation(normalizedKey, translation) {
     if (ocrCacheInsertOrder.length > OCR_CACHE_MAX) {
       const oldest = ocrCacheInsertOrder.shift();
       ocrTranslationCache.delete(oldest);
-      try { localStorage.removeItem('ocr-norm-' + oldest); } catch (_) {}
+      try { storage.removeItem('ocr-norm-' + oldest); } catch (_) {}
     }
   }
   ocrTranslationCache.set(normalizedKey, translation);
-  try { localStorage.setItem('ocr-norm-' + normalizedKey, translation); } catch (_) {}
+  try { storage.setItem('ocr-norm-' + normalizedKey, translation); } catch (_) {}
 }
 
 function stopOcr(message = 'Screen OCR stopped') {
@@ -227,18 +235,19 @@ const screenOcrCoordinator = new ScreenOcrCoordinator({
   setCachedTranslation,
   setTimeout: (callback, delay) => window.setTimeout(callback, delay),
   clearTimeout: (timerId) => window.clearTimeout(timerId),
-  onMetrics: (metrics) => window.overlayApi.recordOcrMetrics(metrics),
-  onDiagnosticUpdate: (update) => window.overlayApi.recordOcrDiagnosticUpdate(update),
+  onMetrics: (metrics) => window.overlayApi.recordOcrMetrics(metrics).catch(() => {}),
+  onDiagnosticUpdate: (update) => window.overlayApi.recordOcrDiagnosticUpdate(update).catch(() => {}),
   ocrIntervalMs,
   candidateTimeoutMs: CANDIDATE_TIMEOUT_MS,
   holdClearMs: HOLD_CLEAR_MS
 });
 
 playPauseButton.addEventListener('click', () => {
+  if (isGameMode) return;
   if (isOcrRunning) screenOcrCoordinator.stop('');
   else screenOcrCoordinator.start();
 });
-ocrOnceButton.addEventListener('click', () => screenOcrCoordinator.readOnce());
+ocrOnceButton.addEventListener('click', () => { if (!isGameMode) screenOcrCoordinator.readOnce(); });
 addWordButton.addEventListener('click', addSelectedWord);
 dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDictionaryWindow());
 settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
@@ -252,13 +261,13 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
   }
   if (key === 'theme') {
     panel.dataset.theme = value;
-    localStorage.setItem('subtitle-overlay-theme', value);
+    storage.setItem('subtitle-overlay-theme', value);
   }
   if (key === 'font') {
     applyFont(value);
   }
   if (key === 'deleteConfirm') {
-    localStorage.setItem('subtitle-confirm-delete', value);
+    storage.setItem('subtitle-confirm-delete', value);
   }
 });
 
@@ -267,9 +276,9 @@ window.overlayApi.onApplyUiSettings((settings) => {
   setDeveloperMode(settings.developerMode === true);
   nearSourceOutput.setSettings(settings);
   if (settings.fontScale) document.documentElement.style.setProperty('--font-scale', `${Number(settings.fontScale) / 100}`);
-  if (settings.theme) { panel.dataset.theme = settings.theme; localStorage.setItem('subtitle-overlay-theme', settings.theme); }
+  if (settings.theme) { panel.dataset.theme = settings.theme; storage.setItem('subtitle-overlay-theme', settings.theme); }
   if (settings.font) applyFont(settings.font);
-  if (typeof settings.deleteConfirm !== 'undefined') localStorage.setItem('subtitle-confirm-delete', settings.deleteConfirm);
+  if (typeof settings.deleteConfirm !== 'undefined') storage.setItem('subtitle-confirm-delete', settings.deleteConfirm);
   if (settings.windowWidth && settings.windowHeight) {
     window.overlayApi.setWindowSize(Number(settings.windowWidth), Number(settings.windowHeight));
   }
@@ -286,7 +295,7 @@ function applyFont(font) {
     'dot matrix': 'Consolas, "Courier New", monospace'
   };
   document.body.style.fontFamily = fonts[font] || fonts.system;
-  localStorage.setItem('subtitle-overlay-font', font);
+  storage.setItem('subtitle-overlay-font', font);
 }
 
 panel.dataset.theme = 'green';
@@ -296,10 +305,10 @@ async function loadInitSettings() {
   try {
     const s = await window.overlayApi.getUiSettings();
     panel.dataset.theme = s.theme || 'green';
-    localStorage.setItem('subtitle-overlay-theme', panel.dataset.theme);
+    storage.setItem('subtitle-overlay-theme', panel.dataset.theme);
     applyFont(s.font || 'system');
     document.documentElement.style.setProperty('--font-scale', `${(s.fontScale || 100) / 100}`);
-    localStorage.setItem('subtitle-confirm-delete', s.deleteConfirm !== false);
+    storage.setItem('subtitle-confirm-delete', s.deleteConfirm !== false);
     if (s.windowWidth && s.windowHeight) {
       window.overlayApi.setWindowSize(Number(s.windowWidth), Number(s.windowHeight));
     }
@@ -335,11 +344,21 @@ focusToggleButton.addEventListener('click', () => {
 let isGameMode = false;
 let manualTranslationRequestId = 0;
 gameModeToggleButton.addEventListener('click', async () => {
+  if (gameModeToggleButton.disabled) return;
+  gameModeToggleButton.disabled = true;
   isGameMode = !isGameMode;
   manualTranslationRequestId += 1;
   gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
   gameModeToggleButton.classList.toggle('primary', isGameMode);
-  await window.overlayApi.setGameModeEnabled(isGameMode);
+  try { await window.overlayApi.setGameModeEnabled(isGameMode); } catch (error) {
+    isGameMode = !isGameMode;
+    gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
+    gameModeToggleButton.classList.toggle('primary', isGameMode);
+    statusElement.textContent = error.message; gameModeToggleButton.disabled = false; return;
+  }
+  gameModeToggleButton.disabled = false;
+  playPauseButton.disabled = isGameMode;
+  ocrOnceButton.disabled = isGameMode;
   if (isGameMode) {
     outputRouter.setGameMode(true);
     stopOcr('Screen OCR stopped for Game mode');
@@ -360,6 +379,8 @@ gameModeToggleButton.addEventListener('click', async () => {
 });
 
 window.overlayApi.onCaptureResult((data) => {
+  if (!isGameMode || !data) return;
+  if (data.error) { statusElement.textContent = data.error; return; }
   manualTranslationRequestId += 1;
   englishTextElement.textContent = data.original || 'No English text found';
   russianTextElement.textContent = data.translation || '-';
@@ -393,6 +414,9 @@ window.overlayApi.onOcrProgress((event) => {
 });
 
 window.overlayApi.onOcrAreaChanged((area) => {
-  hasOcrArea = true;
-  statusElement.textContent = `OCR area selected: ${Math.round(area.width)}x${Math.round(area.height)}`;
+  const wasRunning = isOcrRunning;
+  screenOcrCoordinator.stop('');
+  hasOcrArea = Boolean(area && Number.isFinite(area.width) && Number.isFinite(area.height) && area.width > 0 && area.height > 0);
+  statusElement.textContent = hasOcrArea ? `OCR area selected: ${Math.round(area.width)}x${Math.round(area.height)}` : 'Select OCR area first';
+  if (wasRunning && hasOcrArea && !isGameMode) screenOcrCoordinator.start();
 });

@@ -63,3 +63,14 @@ test('a new smaller one-line subtitle keeps the automatic area after an absence 
   assert.ok(result.area.width > 0 && result.area.height > 0);
   assert.equal(result.changed, false);
 });
+
+test('expanded crop does not shrink while the additional subtitle line remains visible', () => {
+  const image = frame(); line(image, 35); line(image, 65);
+  const first = adapt(image);
+  const expanded = adapt(image, first.state, 200);
+  assert.equal(expanded.changed, true);
+  const held = adaptSubtitleArea({ area: expanded.area, screen: { width: 240, height: 500 }, image, state: expanded.state, now: 1000 });
+  const later = adaptSubtitleArea({ area: held.area, screen: { width: 240, height: 500 }, image, state: held.state, now: 5000 });
+  assert.deepEqual(later.area, expanded.area);
+  assert.equal(later.changed, false);
+});

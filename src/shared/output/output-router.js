@@ -9,6 +9,8 @@
       this.nearSourceOutput = nearSourceOutput;
       this.displayMode = 'panel';
       this.gameMode = false;
+      this.overlayVisible = true;
+      this.lastTranslationSource = '';
       this.lastRecognizedText = '';
       this.lastTranslation = '';
     }
@@ -17,8 +19,8 @@
       this.displayMode = ['panel', 'overlay', 'both'].includes(mode) ? mode : 'panel';
       if (!this.shouldUseOverlay()) {
         this.nearSourceOutput.setVisible(false);
-      } else if (this.lastTranslation) {
-        this.nearSourceOutput.showTranslation(this.lastTranslation, this.lastRecognizedText);
+      } else if (this.overlayVisible && this.lastTranslation) {
+        this.nearSourceOutput.showTranslation(this.lastTranslation, this.lastTranslationSource);
       }
     }
 
@@ -49,7 +51,7 @@
 
     showTranslation(translatedText, sourceText) {
       if (typeof sourceText === 'string') this.lastRecognizedText = sourceText;
-      if (typeof translatedText === 'string' && translatedText.trim()) this.lastTranslation = translatedText;
+      if (typeof translatedText === 'string' && translatedText.trim()) { this.lastTranslation = translatedText; this.lastTranslationSource = sourceText || this.lastRecognizedText; this.overlayVisible = true; }
       if (this.shouldUsePanel()) this.mainOutput.showTranslation(translatedText, sourceText);
       if (this.shouldUseOverlay()) this.nearSourceOutput.showTranslation(translatedText, sourceText || this.lastRecognizedText);
       if (typeof process !== 'undefined' && process.env?.OCR_DEBUG === '1') console.debug('[OCR] output routed', { panel: this.shouldUsePanel(), overlay: this.shouldUseOverlay(), textLength: String(translatedText || '').length });
@@ -65,13 +67,16 @@
     clear() {
       this.lastRecognizedText = '';
       this.lastTranslation = '';
+      this.lastTranslationSource = '';
+      this.overlayVisible = false;
       this.mainOutput.clear();
       this.nearSourceOutput.clear();
     }
 
-    hideOverlay() { this.nearSourceOutput.setVisible(false); }
+    hideOverlay() { this.overlayVisible = false; this.nearSourceOutput.setVisible(false); }
 
     setVisible(visible) {
+      this.overlayVisible = Boolean(visible);
       this.mainOutput.setVisible(visible);
       if (!visible || this.shouldUseOverlay()) this.nearSourceOutput.setVisible(visible);
     }

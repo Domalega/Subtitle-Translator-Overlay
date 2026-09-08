@@ -29,7 +29,7 @@ function downscale(image, maximumWidth) {
       let bright = false;
       let dark = false;
       // Preserve thin strokes which nearest-neighbor sampling can skip entirely.
-      for (let sourceY = sourceTop; sourceY < sourceBottom && !bright; sourceY += 1) for (let sourceX = sourceLeft; sourceX < sourceRight; sourceX += 1) {
+      for (let sourceY = sourceTop; sourceY < sourceBottom && !bright; sourceY += 1) for (let sourceX = sourceLeft; sourceX < sourceRight && !bright; sourceX += 1) {
         const pixel = pixelAt(image.data, sourceWidth, sourceX, sourceY, pixelOrder);
         bright = isBrightSubtitlePixel(pixel);
         dark = dark || isDark(pixel);
@@ -110,7 +110,7 @@ function detectAtWidth(image, maximumWidth) {
 }
 
 function detectSubtitleArea(image) {
-  if (!Number.isFinite(image?.width) || !Number.isFinite(image?.height) || !image?.data || image.data.length < image.width * image.height * 4) return { found: false, bestCandidate: null, candidates: [], metrics: { durationMs: 0, analyzedWidth: 0, analyzedHeight: 0, primaryDurationMs: 0, fallbackDurationMs: 0, fallbackUsed: false } };
+  if (!Number.isInteger(image?.width) || image.width <= 0 || !Number.isInteger(image?.height) || image.height <= 0 || !image?.data || image.data.length < image.width * image.height * 4) return { found: false, bestCandidate: null, candidates: [], metrics: { durationMs: 0, analyzedWidth: 0, analyzedHeight: 0, primaryDurationMs: 0, fallbackDurationMs: 0, fallbackUsed: false } };
   const primary = detectAtWidth(image, 640);
   if (primary.found || image.width <= 640) return { ...primary, metrics: { ...primary.metrics, primaryDurationMs: primary.metrics.durationMs, fallbackDurationMs: 0, fallbackUsed: false } };
   const fallback = detectAtWidth(image, 1024);

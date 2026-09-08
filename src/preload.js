@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+function subscribe(channel, callback) {
+  if (typeof callback !== 'function') throw new TypeError('Event callback must be a function');
+  const listener = (_event, ...args) => callback(...args);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld('overlayApi', {
   openSrt: () => ipcRenderer.invoke('open-srt'),
   translate: (text, scope) => ipcRenderer.invoke('translate', text, scope),
@@ -15,6 +22,7 @@ contextBridge.exposeInMainWorld('overlayApi', {
     const payload = {
       id: Number(frame?.id),
       generation: Number(frame?.generation),
+      areaRevision: Number(frame?.areaRevision),
       capturedAt: Number(frame?.capturedAt),
       imageChanged: Boolean(frame?.imageChanged),
       forced: Boolean(frame?.forced),
@@ -59,58 +67,22 @@ contextBridge.exposeInMainWorld('overlayApi', {
   clearNearSourceOverlay: () => ipcRenderer.invoke('clear-near-source-overlay'),
   updateNearSourceSettings: (settings) => ipcRenderer.invoke('update-near-source-settings', settings),
   nearSourceOverlayMeasured: (size) => ipcRenderer.invoke('near-source-overlay-measured', size),
-  onCaptureResult: (callback) => {
-    ipcRenderer.on('capture-result', (_event, data) => callback(data));
-  },
-  onGameModeDisabled: (callback) => {
-    ipcRenderer.on('game-mode-disabled', callback);
-  },
-  onTranslateResult: (callback) => {
-    ipcRenderer.on('translate-result', (_event, data) => callback(data));
-  },
-  onToggleControls: (callback) => {
-    ipcRenderer.on('toggle-controls', callback);
-  },
-  onWindowRestored: (callback) => {
-    ipcRenderer.on('window-restored', callback);
-  },
-  onStopOcr: (callback) => {
-    ipcRenderer.on('stop-ocr', callback);
-  },
-  onOcrProgress: (callback) => {
-    ipcRenderer.on('ocr-progress', (_event, progress) => callback(progress));
-  },
-  onOcrAreaChanged: (callback) => {
-    ipcRenderer.on('ocr-area-changed', (_event, area) => callback(area));
-  },
-  onApplyUiSetting: (callback) => {
-    ipcRenderer.on('apply-ui-setting', (_event, setting) => callback(setting));
-  },
-  onApplyUiSettings: (callback) => {
-    ipcRenderer.on('apply-ui-settings', (_event, settings) => callback(settings));
-  },
-  onDictionaryChanged: (callback) => {
-    ipcRenderer.on('dictionary-changed', callback);
-  },
-  onNearSourceOverlayContent: (callback) => {
-    ipcRenderer.on('near-source-overlay-content', (_event, payload) => callback(payload));
-  },
-  onNearSourceOverlaySettings: (callback) => {
-    ipcRenderer.on('near-source-overlay-settings', (_event, settings) => callback(settings));
-  },
-  onDeveloperOcrZoneTheme: (callback) => {
-    ipcRenderer.on('developer-ocr-zone-theme', (_event, color) => callback(color));
-  },
-  onDeveloperOcrZoneStyle: (callback) => {
-    ipcRenderer.on('developer-ocr-zone-style', (_event, style) => callback(style));
-  },
-  onDeveloperOcrZoneState: (callback) => {
-    ipcRenderer.on('developer-ocr-zone-state', (_event, state) => callback(state));
-  },
-  onDeveloperSubtitleCandidateState: (callback) => {
-    ipcRenderer.on('developer-subtitle-candidate-state', (_event, state) => callback(state));
-  },
-  onDeveloperStatus: (callback) => {
-    ipcRenderer.on('developer-status', (_event, event) => callback(event));
-  }
+  onCaptureResult: (callback) => subscribe('capture-result', callback),
+  onGameModeDisabled: (callback) => subscribe('game-mode-disabled', callback),
+  onTranslateResult: (callback) => subscribe('translate-result', callback),
+  onToggleControls: (callback) => subscribe('toggle-controls', callback),
+  onWindowRestored: (callback) => subscribe('window-restored', callback),
+  onStopOcr: (callback) => subscribe('stop-ocr', callback),
+  onOcrProgress: (callback) => subscribe('ocr-progress', callback),
+  onOcrAreaChanged: (callback) => subscribe('ocr-area-changed', callback),
+  onApplyUiSetting: (callback) => subscribe('apply-ui-setting', callback),
+  onApplyUiSettings: (callback) => subscribe('apply-ui-settings', callback),
+  onDictionaryChanged: (callback) => subscribe('dictionary-changed', callback),
+  onNearSourceOverlayContent: (callback) => subscribe('near-source-overlay-content', callback),
+  onNearSourceOverlaySettings: (callback) => subscribe('near-source-overlay-settings', callback),
+  onDeveloperOcrZoneTheme: (callback) => subscribe('developer-ocr-zone-theme', callback),
+  onDeveloperOcrZoneStyle: (callback) => subscribe('developer-ocr-zone-style', callback),
+  onDeveloperOcrZoneState: (callback) => subscribe('developer-ocr-zone-state', callback),
+  onDeveloperSubtitleCandidateState: (callback) => subscribe('developer-subtitle-candidate-state', callback),
+  onDeveloperStatus: (callback) => subscribe('developer-status', callback)
 });

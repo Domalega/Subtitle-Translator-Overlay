@@ -139,20 +139,23 @@ class OcrDiagnosticSampleService {
 
   async saveLastSample() {
     if (!this.lastSample) return { ok: false, error: 'NO_COMPLETED_OCR_SAMPLE' };
+    const sample = { ...this.lastSample, decision: { ...this.lastSample.decision }, translation: { ...this.lastSample.translation } };
     const name = createSampleFolderName(this.now());
     const root = this.diagnosticsPath();
     const finalPath = this.path.join(root, name);
+    let ownsTemporary = false;
     const temporaryPath = this.path.join(root, `.${name}.tmp-${Math.floor(this.random() * 1e9)}`);
     try {
       await this.fs.mkdir(root, { recursive: true });
       await this.fs.mkdir(temporaryPath);
-      await this.fs.writeFile(this.path.join(temporaryPath, 'source.png'), this.lastSample.sourceImage);
-      await this.fs.writeFile(this.path.join(temporaryPath, 'ocr-input.png'), this.lastSample.ocrInputImage);
-      await this.fs.writeFile(this.path.join(temporaryPath, 'metadata.json'), JSON.stringify(createMetadata(this.lastSample), null, 2), 'utf8');
+      ownsTemporary = true;
+      await this.fs.writeFile(this.path.join(temporaryPath, 'source.png'), sample.sourceImage);
+      await this.fs.writeFile(this.path.join(temporaryPath, 'ocr-input.png'), sample.ocrInputImage);
+      await this.fs.writeFile(this.path.join(temporaryPath, 'metadata.json'), JSON.stringify(createMetadata(sample), null, 2), 'utf8');
       await this.fs.rename(temporaryPath, finalPath);
       return { ok: true };
     } catch (_error) {
-      try { await this.fs.rm(temporaryPath, { recursive: true, force: true }); } catch (_) {}
+      try { if (ownsTemporary) await this.fs.rm(temporaryPath, { recursive: true, force: true }); } catch (_) {}
       return { ok: false, error: 'SAVE_FAILED' };
     }
   }

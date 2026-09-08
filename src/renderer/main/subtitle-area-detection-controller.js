@@ -36,15 +36,15 @@
       }
     });
     saveButton.addEventListener('click', async () => {
-      const result = await window.overlayApi.saveOcrDiagnosticSample();
+      const result = await window.overlayApi.saveOcrDiagnosticSample().catch(() => ({ ok: false }));
       status.textContent = result?.ok ? 'OCR sample saved' : result?.error === 'NO_COMPLETED_OCR_SAMPLE' ? 'No completed OCR sample' : 'Failed to save OCR sample';
     });
     saveDetectionButton.addEventListener('click', async () => {
-      const result = await window.overlayApi.saveDetectionSample();
+      const result = await window.overlayApi.saveDetectionSample().catch(() => ({ ok: false }));
       status.textContent = result?.ok ? 'Detection sample saved' : 'No detection sample';
     });
     openButton.addEventListener('click', async () => {
-      if (!await window.overlayApi.openOcrDiagnosticsFolder()) status.textContent = 'Failed to open diagnostics folder';
+      if (!await window.overlayApi.openOcrDiagnosticsFolder().catch(() => false)) status.textContent = 'Failed to open diagnostics folder';
     });
     useButton.addEventListener('click', async () => {
       try {

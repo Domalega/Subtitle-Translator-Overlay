@@ -26,13 +26,14 @@
   const FONTS = new Set(['system', 'inter', 'segoe ui', 'arial', 'consolas', 'jetbrains mono', 'dot matrix']);
 
   function clampNumber(value, fallback, min, max) {
+    if (!['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return fallback;
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
     return Math.min(max, Math.max(min, Math.round(number)));
   }
 
   function normalizeUiSettings(savedSettings = {}) {
-    const source = savedSettings && typeof savedSettings === 'object' ? savedSettings : {};
+    const source = savedSettings && typeof savedSettings === 'object' && !Array.isArray(savedSettings) ? savedSettings : {};
     const merged = { ...source };
 
     merged.theme = THEMES.has(source.theme) ? source.theme : DEFAULT_UI_SETTINGS.theme;
@@ -53,7 +54,8 @@
       ? source.nearSourcePlacement : DEFAULT_UI_SETTINGS.nearSourcePlacement;
     merged.nearSourceVerticalOffset = clampNumber(source.nearSourceVerticalOffset, DEFAULT_UI_SETTINGS.nearSourceVerticalOffset, 0, 100);
     merged.nearSourceFontSize = clampNumber(source.nearSourceFontSize, DEFAULT_UI_SETTINGS.nearSourceFontSize, 12, 64);
-    const opacity = Number(source.nearSourceBackgroundOpacity);
+    const opacityValue = source.nearSourceBackgroundOpacity;
+    const opacity = ['number', 'string'].includes(typeof opacityValue) && String(opacityValue).trim() ? Number(opacityValue) : NaN;
     merged.nearSourceBackgroundOpacity = Number.isFinite(opacity)
       ? Math.min(1, Math.max(0.1, Math.round(opacity * 100) / 100))
       : DEFAULT_UI_SETTINGS.nearSourceBackgroundOpacity;

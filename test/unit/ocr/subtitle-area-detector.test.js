@@ -46,8 +46,12 @@ test('finds a yellow subtitle line', () => {
 
 test('rewards text with a dark outline', () => {
   const outlined = image(); subtitleLine(outlined, 220, 365);
-  const plain = image(); subtitleLine(plain, 220, 365); solid(plain, 0, 0, 1, 1, [120, 120, 120]);
-  assert.ok(detectSubtitleArea(outlined).bestCandidate.reasons.includes('dark-outline'));
+  const plain = image(); plain.data.fill(120); subtitleLine(plain, 220, 365);
+  const dark = detectSubtitleArea(outlined).bestCandidate;
+  const grey = detectSubtitleArea(plain).bestCandidate;
+  assert.ok(dark.reasons.includes('dark-outline'));
+  assert.equal(grey.reasons.includes('dark-outline'), false);
+  assert.ok(dark.score > grey.score);
 });
 
 test('finds a subtitle line in the middle portion of the screen', () => {

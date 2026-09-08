@@ -21,7 +21,7 @@ The main process keeps `contextIsolation` enabled and `nodeIntegration` disabled
 
 `src/preload.js` exposes the `window.overlayApi` bridge through `contextBridge`.
 
-The preload contract is intentionally preserved. Existing methods still use `ipcRenderer.invoke()` and existing event subscriptions still use `ipcRenderer.on()`.
+Methods use `ipcRenderer.invoke()`. Event subscriptions strip the Electron event object and return an unsubscribe function. Main handlers validate the owning window, top frame and local renderer URL; renderer navigation and popups are blocked.
 
 ## Renderer
 
@@ -50,8 +50,8 @@ These modules do not require Electron and can be tested with `node:test`.
 2. `src/renderer/capture/select.html` sends `complete-ocr-area` through preload.
 3. Main stores the selected OCR area and broadcasts `ocr-area-changed`.
 4. The main overlay enables `Read once` and `Start` behavior through `ScreenOcrCoordinator`.
-5. `ScreenOcrCoordinator` calls `read-screen-subtitle` through preload.
-6. Main captures the screen, crops the selected area, runs Tesseract, cleans OCR text, and returns text.
+5. `ScreenOcrCoordinator` polls `capture-screen-subtitle-frame` every 200 ms, with changed-frame detection and periodic forced refreshes; `Read once` forces capture.
+6. Main returns a cropped frame and area revision. `recognize-screen-subtitle-frame` runs the serialized Tesseract worker, rejects stale area revisions, cleans OCR text and returns text. Capture and recognition queues track generations across Stop/Start. The legacy `read-screen-subtitle` path remains available.
 7. `SubtitleStabilizer` filters empty OCR, OCR noise, duplicate subtitles, similar subtitles, and growing candidates.
 8. Accepted candidates are translated through the existing `translate` IPC path.
 9. `MainPanelOutput` updates the main English and Russian text columns.
@@ -104,7 +104,7 @@ Renderer keeps using the existing preload IPC methods. Screen OCR, manual retran
 
 `src/shared/settings/settings-store.js` defines `DEFAULT_UI_SETTINGS` and `normalizeUiSettings()`.
 
-Main loads `ui-settings.json`, normalizes missing or invalid fields, preserves unknown legacy fields, and saves updates through a serialized write queue. The settings UI uses `ui-settings.json` as the source of truth. `localStorage` is only a local cache for renderer UI state.
+Main loads `ui-settings.json`, normalizes missing or invalid fields, preserves unknown legacy fields, and saves updates through serialized read-modify-write transactions using an exclusive temporary file, sync and rename. Malformed stored JSON is reported rather than overwritten. Dictionary and game settings use the same store. The settings UI uses `ui-settings.json` as the source of truth. `localStorage` is only a local cache for renderer UI state.
 
 Hidden legacy Game OCR settings may remain in old JSON files, but they are not shown in the current settings interface.
 
@@ -145,6 +145,8 @@ Renderer to main through `ipcRenderer.invoke()`:
 - `dictionary-delete`
 - `get-context-sentences`
 - `export-dictionary`
+- `capture-screen-subtitle-frame`
+- `recognize-screen-subtitle-frame`
 - `read-screen-subtitle`
 - `select-ocr-area`
 - `complete-ocr-area`
@@ -188,3 +190,7 @@ Main to renderer through `webContents.send()`:
 - `near-source-overlay-settings`
 
 There is no `ipcRenderer.send()` usage in the current source.
+
+## Offline OCR and validation
+
+Tesseract workers use the local English model with downloads/cache writes disabled. In packaged builds the model lives in resources/eng.traineddata and the worker/WASM live outside ASAR. OcrWorkerService serializes jobs, bounds initialization/recognition/disposal and retires late workers. See [stage-1 audit](audit-stage-1.md) for regression coverage, integration checks and remaining OS acceptance work.

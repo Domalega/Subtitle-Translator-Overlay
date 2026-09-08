@@ -53,3 +53,11 @@ test('NearSourceOutput retains receiver-sensitive dependencies and does not show
   output.showTranslation('old'); output.showTranslationPending(); output.showTranslationError('error'); output.showTranslation(''); output.setVisible(false);
   assert.deepEqual(events, [['show', 'old'], ['hide']]);
 });
+
+test('stopped overlay stays hidden across display and Game mode settings', () => {
+  const main = output(); const near = output(); const router = new OutputRouter({ mainOutput: main, nearSourceOutput: near });
+  router.setDisplayMode('both'); router.showTranslation('old', 'source'); router.hideOverlay();
+  const count = near.calls.filter(c => c[0] === 'translation').length;
+  router.setDisplayMode('panel'); router.setDisplayMode('both'); router.setGameMode(true); router.setGameMode(false);
+  assert.equal(near.calls.filter(c => c[0] === 'translation').length, count);
+});

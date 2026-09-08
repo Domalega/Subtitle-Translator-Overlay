@@ -12,7 +12,7 @@ function walk(directory) {
     else if (entry.name.endsWith('.js')) files.push(file);
   }
 }
-walk(root);
+for (const folder of ['src', 'scripts', 'test']) walk(path.join(root, folder));
 for (const file of files) {
   const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   if (result.status !== 0) process.stderr.write(result.stderr || result.stdout);

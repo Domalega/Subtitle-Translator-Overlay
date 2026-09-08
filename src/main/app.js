@@ -4,6 +4,8 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 const { createWorker } = require('tesseract.js');
 const { PNG } = require('pngjs');
+const { JsonFileStore } = require('./services/json-file-store');
+const { requestJson } = require('./services/request-json');
 const { cleanScreenOcrText } = require('../shared/ocr/text-utils');
 const { OcrWorkerService } = require('./services/ocr-worker-service');
 const { calculateCropBounds } = require('../shared/ocr/crop-bounds');
@@ -21,13 +23,31 @@ const { DEFAULT_UI_SETTINGS, normalizeUiSettings } = require('../shared/settings
 const { calculateNearSourceBounds } = require('../shared/output/near-source-position');
 
 const UI_SMOKE = process.env.UI_SMOKE === '1';
-if (UI_SMOKE) app.setPath('userData', path.join(require('node:os').tmpdir(), `subtitle-overlay-ui-smoke-${process.pid}`));
+if (UI_SMOKE) app.setPath('userData', process.env.UI_SMOKE_USER_DATA || path.join(require('node:os').tmpdir(), `subtitle-overlay-ui-smoke-${process.pid}`));
 if (UI_SMOKE) {
   process.on('uncaughtException', (error) => {
     console.error('UI smoke uncaught exception:', error.stack || error.message);
     app.exit(1);
   });
 }
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-navigate', event => event.preventDefault());
+});
+
+function handleIpc(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const frame = event.senderFrame;
+    if (!owner || owner.isDestroyed() || !frame || frame !== event.sender.mainFrame) throw new Error('Untrusted IPC sender');
+    let file;
+    try { file = require('node:url').fileURLToPath(frame.url); } catch (_) { throw new Error('Untrusted IPC sender'); }
+    const relative = path.relative(path.join(__dirname, '..'), file);
+    if (relative.startsWith('..') || path.isAbsolute(relative) || path.extname(relative) !== '.html') throw new Error('Untrusted IPC sender');
+    return handler(event, ...args);
+  });
+}
+
 app.disableHardwareAcceleration();
 const singleInstanceLock = app.requestSingleInstanceLock();
 
@@ -41,7 +61,8 @@ let nearSourceWindow;
 let developerManualOcrZoneWindow;
 let developerAutomaticOcrZoneWindow;
 let developerSubtitleCandidateWindow;
-let gameOcrWorkerPromise;
+const gameOcrWorker = new OcrWorkerService({ createWorker: createAppOcrWorker, layout: 'sparse' });
+let gameRequestId = 0;
 let ocrArea = null;
 let ocrAnchorBoundsDip = null;
 let manualOcrArea = null;
@@ -53,6 +74,7 @@ let lastAutomaticBoundsDip = null;
 let automaticAreaAdapterState = {};
 let automaticAreaAdaptation = { lineCountEstimate: null, areaAdapted: null, adaptationReason: null, expandedTop: false, expandedBottom: false };
 let nearSourceContent = null;
+let nearSourceVisible = false;
 let nearSourceSettings = normalizeUiSettings(DEFAULT_UI_SETTINGS);
 let detectedSubtitleBoundsDip = null;
 let detectedSubtitleDisplayId = null;
@@ -67,6 +89,14 @@ let subtitleDetectionRetryTimer = null;
 let pendingDistantCandidate = null;
 const subtitleAreaTracker = new SubtitleAreaTracker();
 const subtitleTrackingMetrics = { globalSearches: 0, totalSearchMs: 0, reacquireCount: 0, lockedStartedAt: null, lockedMs: 0, captureCount: 0, ocrRequestCount: 0, acceptedSubtitleCount: 0, duplicateRejectedCount: 0, emptyResultCount: 0, fallbackCount: 0, detector640Ms: 0, fallbackDetectorMs: 0, automaticEmptyFrames: 0, recentOcrRequests: [], recentGlobalSearches: [] };
+
+function createAppOcrWorker(language, oem, options) {
+  return createWorker(language, oem, {
+    ...options, gzip: false, cacheMethod: 'none',
+    langPath: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..'),
+    ...(app.isPackaged ? { workerPath: path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js') } : {})
+  });
+}
 
 function getActiveOcrArea() {
   return selectActiveOcrArea({ manualArea: manualOcrArea, manualAnchorBoundsDip: manualOcrAnchorBoundsDip, automaticArea: automaticOcrArea, automaticAnchorBoundsDip: automaticOcrAnchorBoundsDip, automaticDisplayId });
@@ -147,6 +177,7 @@ function updateDeveloperZone({ window, setWindow, getWindow, boundsDip, type, se
 }
 
 function updateDeveloperOcrZone(settings = loadUiSettings()) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   updateDeveloperZone({ window: developerManualOcrZoneWindow, setWindow: (value) => { developerManualOcrZoneWindow = value; }, getWindow: () => developerManualOcrZoneWindow, boundsDip: manualOcrAnchorBoundsDip, type: 'manual', settings });
   updateDeveloperZone({ window: developerAutomaticOcrZoneWindow, setWindow: (value) => { developerAutomaticOcrZoneWindow = value; }, getWindow: () => developerAutomaticOcrZoneWindow, boundsDip: automaticOcrAnchorBoundsDip, type: 'automatic', settings });
 }
@@ -174,7 +205,7 @@ function updateDeveloperSubtitleCandidateZone(settings = loadUiSettings()) {
     developerSubtitleCandidateWindow.setIgnoreMouseEvents(true);
     developerSubtitleCandidateWindow.loadFile(path.join(__dirname, '..', 'renderer', 'overlays', 'developer-zone', 'developer-subtitle-candidate.html'));
     const created = developerSubtitleCandidateWindow;
-    created.webContents.once('did-finish-load', () => { if (developerSubtitleCandidateWindow === created && !created.isDestroyed()) { created.webContents.send('developer-subtitle-candidate-state', { visible: true }); created.showInactive(); } });
+    created.webContents.once('did-finish-load', () => { if (developerSubtitleCandidateWindow === created && !created.isDestroyed() && detectedSubtitleBoundsDip && loadUiSettings().developerMode === true) { created.webContents.send('developer-subtitle-candidate-state', { visible: true }); created.showInactive(); } });
     created.on('closed', () => { if (developerSubtitleCandidateWindow === created) developerSubtitleCandidateWindow = null; });
   } else {
     developerSubtitleCandidateWindow.setBounds(bounds);
@@ -190,13 +221,9 @@ function subtitleCandidateBoundsDip(candidate, imageSize, display) { return capt
 
 function setAutomaticAreaFromCandidate(candidateCaptureArea, captureSize, display, { reacquired = false } = {}) {
   const relative = clampCaptureArea(candidateCaptureArea, captureSize);
-  const candidateBoundsDip = captureAreaToDisplayDipArea(relative, captureSize, display.bounds);
-  const previousRelative = automaticOcrAnchorBoundsDip && automaticDisplayId === display.id ? {
-    x: automaticOcrAnchorBoundsDip.x - display.bounds.x, y: automaticOcrAnchorBoundsDip.y - display.bounds.y,
-    width: automaticOcrAnchorBoundsDip.width, height: automaticOcrAnchorBoundsDip.height
-  } : null;
-  const stable = stabilizeArea(previousRelative, relative, display.size);
-  automaticOcrArea = displayDipAreaToCaptureArea(stable, captureSize, display.bounds);
+  const previous = automaticOcrAnchorBoundsDip && automaticDisplayId === display.id
+    ? displayDipAreaToCaptureArea(automaticOcrAnchorBoundsDip, captureSize, display.bounds) : null;
+  automaticOcrArea = stabilizeArea(previous, relative, captureSize);
   automaticCaptureSize = { ...captureSize };
   automaticOcrAnchorBoundsDip = captureAreaToDisplayDipArea(automaticOcrArea, automaticCaptureSize, display.bounds);
   automaticAreaRevision += 1;
@@ -213,6 +240,8 @@ function setAutomaticAreaFromCandidate(candidateCaptureArea, captureSize, displa
 }
 
 function stopAutomaticTracking() {
+  subtitleDetectionRequestId += 1;
+  automaticAreaRevision += 1;
   if (subtitleTrackingMetrics.lockedStartedAt) subtitleTrackingMetrics.lockedMs += performance.now() - subtitleTrackingMetrics.lockedStartedAt;
   subtitleTrackingMetrics.lockedStartedAt = null;
   subtitleAreaTracker.dispatch('manualStop');
@@ -265,7 +294,7 @@ const gameDictionaryCache = new Map();
 const translationService = new TranslationService({ fetch: (...args) => fetch(...args) });
 const ocrMetrics = new OcrMetrics();
 const screenOcrWorker = new OcrWorkerService({
-  createWorker,
+  createWorker: createAppOcrWorker,
   logger: (message) => {
     const request = message.request;
     if (message.status === 'recognizing text' && request) {
@@ -295,29 +324,17 @@ function dictionaryFilePath() {
   return path.join(app.getPath('userData'), 'dictionary.json');
 }
 
-async function readDictionary() {
-  try {
-    return JSON.parse(await fs.readFile(dictionaryFilePath(), 'utf8'));
-  } catch (_error) {
-    return [];
+const dictionaryStore = new JsonFileStore({
+  filePath: dictionaryFilePath, defaults: [],
+  normalize: entries => {
+    if (!Array.isArray(entries) || entries.some(entry => !entry || typeof entry !== 'object' ||
+      ['english', 'russian', 'sourceText', 'transcription'].some(key => entry[key] != null && typeof entry[key] !== 'string'))) {
+      throw new Error('Dictionary data is invalid. The existing file was preserved.');
+    }
+    return entries;
   }
-}
-
-async function writeDictionary(entries) {
-  await fs.mkdir(app.getPath('userData'), { recursive: true });
-  await fs.writeFile(dictionaryFilePath(), JSON.stringify(entries, null, 2), 'utf8');
-}
-
-async function getGameOcrWorker() {
-  if (!gameOcrWorkerPromise) {
-    gameOcrWorkerPromise = createWorker('eng', 1, { logger: () => {} });
-    gameOcrWorkerPromise = gameOcrWorkerPromise.then(async (worker) => {
-      await worker.setParameters({ tessedit_pageseg_mode: '11' });
-      return worker;
-    });
-  }
-  return gameOcrWorkerPromise;
-}
+});
+async function readDictionary() { await dictionaryStore.tail; return dictionaryStore.read(); }
 
 function cleanOcrText(text) {
   return cleanScreenOcrText(text);
@@ -356,7 +373,7 @@ function subtitleMaskToPng(image) {
     const brightness = Math.max(red, green, blue);
     const darkness = Math.min(red, green, blue);
     const saturation = brightness - darkness;
-    const isSubtitlePixel = brightness > 175 && saturation < 95;
+    const isSubtitlePixel = (brightness > 175 && saturation < 95) || (red >= 170 && green >= 115 && blue <= 170 && red >= blue + 40);
     const value = isSubtitlePixel ? 255 : 0;
 
     png.data[targetOffset] = value;
@@ -390,6 +407,7 @@ function createSelectionWindow() {
     frame: false,
     alwaysOnTop: true,
     resizable: false,
+    show: !UI_SMOKE,
     skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -455,6 +473,7 @@ function createCaptureWindow() {
     frame: false,
     alwaysOnTop: true,
     resizable: false,
+    show: !UI_SMOKE,
     skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -483,6 +502,7 @@ function createTranslateWindow() {
     frame: false,
     alwaysOnTop: true,
     resizable: true,
+    show: !UI_SMOKE,
     title: 'Screen Translation',
     parent: mainWindow,
     webPreferences: {
@@ -544,6 +564,7 @@ function createNearSourceWindow() {
 }
 
 function hideNearSourceOverlay() {
+  nearSourceVisible = false;
   if (nearSourceWindow && !nearSourceWindow.isDestroyed()) nearSourceWindow.hide();
 }
 
@@ -562,6 +583,7 @@ function isNearSourceEnabled() {
 function showNearSourceOverlay(payload) {
   if (!isNearSourceEnabled() || !ocrAnchorBoundsDip || typeof payload?.text !== 'string' || !payload.text.trim()) return false;
   nearSourceContent = { text: payload.text };
+  nearSourceVisible = true;
   const window = createNearSourceWindow();
   if (process.env.OCR_DEBUG === '1') console.debug('[OCR] overlay show requested', { textLength: payload.text.length });
   if (!window.webContents.isLoading()) {
@@ -572,7 +594,7 @@ function showNearSourceOverlay(payload) {
 }
 
 function placeNearSourceOverlay() {
-  if (!isNearSourceEnabled() || !nearSourceContent || !ocrAnchorBoundsDip) return false;
+  if (!nearSourceVisible || !isNearSourceEnabled() || !nearSourceContent || !ocrAnchorBoundsDip) return false;
   const window = createNearSourceWindow();
   const display = screen.getDisplayMatching(ocrAnchorBoundsDip);
   const overlaySize = nearSourceOverlaySize(display);
@@ -593,7 +615,8 @@ function placeNearSourceOverlay() {
 }
 
 async function runCaptureTranslate(area) {
-  if (gameOcrBusy) return;
+  if (gameOcrBusy || !gameModeEnabled || !area || ![area.x, area.y, area.width, area.height].every(Number.isFinite) || area.width <= 0 || area.height <= 0) return false;
+  const requestId = ++gameRequestId;
   gameOcrBusy = true;
 
   try {
@@ -601,40 +624,32 @@ async function runCaptureTranslate(area) {
     const scale = display.scaleFactor || 1;
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: display.size.width, height: display.size.height }
+      thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }
     });
-    const source = sources[0];
-    if (!source) return;
+    const source = sources.find(entry => entry.display_id === String(display.id));
+    if (!source) throw new Error('Screen capture is unavailable');
+    if (requestId !== gameRequestId || !gameModeEnabled) return false;
 
-    const image = nativeImage.createFromDataURL(source.thumbnail.toDataURL());
-    const cropArea = {
-      x: Math.round(area.x * scale),
-      y: Math.round(area.y * scale),
-      width: Math.round(area.width * scale),
-      height: Math.round(area.height * scale)
-    };
+    const image = source.thumbnail;
+    const cropArea = calculateCropBounds({ imageSize: image.getSize(), displaySize: display.size, ocrArea: area });
     const crop = image.crop(cropArea);
     const pngBuffer = crop.toPNG();
 
-    const worker = await getGameOcrWorker();
-    const result = await worker.recognize(pngBuffer);
+    const result = await gameOcrWorker.recognize(pngBuffer, { requestId });
+    if (requestId !== gameRequestId || !gameModeEnabled) return false;
 
     const text = cleanGameOcrText(result.data.text);
     const words = extractGameWords(text);
 
-    await refreshDictionaryCache();
+
 
     if (!text || text.length < 3) {
       mainWindow?.webContents.send('capture-result', { original: '', translation: '', words: [] });
       return;
     }
 
-    const cacheKey = text.toLowerCase().trim();
-    let translation = gameTranslationCache.get(cacheKey);
-    if (!translation) {
-      translation = await translateText(text, 'en', 'ru', 'game');
-      if (translation) gameTranslationCache.set(cacheKey, translation);
-    }
+    const translation = await translateText(text, 'en', 'ru', 'game');
+    if (requestId !== gameRequestId || !gameModeEnabled) return false;
 
     const wordEntries = words.map((w) => ({
       english: w,
@@ -647,6 +662,7 @@ async function runCaptureTranslate(area) {
       words: wordEntries
     });
   } catch (error) {
+    if (requestId === gameRequestId && gameModeEnabled) mainWindow?.webContents.send('capture-result', { error: error.message || 'Capture translation failed' });
     console.error('Capture translate error:', error);
   } finally {
     gameOcrBusy = false;
@@ -654,7 +670,7 @@ async function runCaptureTranslate(area) {
 }
 
 function cleanGameOcrText(text) {
-  return text
+  return String(text || '')
     .replace(/[|_{}[\]<>~`^]/g, '')
     .replace(/[^a-zA-Z0-9 .,!?'"\-:;()[\]\n]/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
@@ -716,6 +732,12 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'main', 'index.html'));
 
   mainWindow.on('closed', () => {
+    subtitleDetectionRequestId += 1;
+    gameRequestId += 1;
+    clearTimeout(subtitleDetectionRetryTimer);
+    translationService.abortScope('screen-ocr');
+    translationService.abortScope('game');
+    translationService.abortScope('manual');
     if (nearSourceWindow && !nearSourceWindow.isDestroyed()) nearSourceWindow.close();
     if (developerManualOcrZoneWindow && !developerManualOcrZoneWindow.isDestroyed()) developerManualOcrZoneWindow.close();
     if (developerAutomaticOcrZoneWindow && !developerAutomaticOcrZoneWindow.isDestroyed()) developerAutomaticOcrZoneWindow.close();
@@ -724,9 +746,7 @@ function createWindow() {
     mainWindow = null;
     globalShortcut.unregisterAll();
     screenOcrWorker.dispose().catch(() => {});
-    if (gameOcrWorkerPromise) {
-      gameOcrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
-    }
+    gameOcrWorker.dispose().catch(() => {});
     app.quit();
   });
 
@@ -776,110 +796,6 @@ function createWindow() {
   registerGameHotkey(uiSettings.hotkey || 'CommandOrControl+Shift+T');
 }
 
-async function runUiSmokeTest() {
-  console.log('UI smoke test: loading windows.');
-  const failures = [];
-  const reportFailure = (message) => failures.push(message);
-  const evaluate = (window, source, name) => Promise.race([
-    window.webContents.executeJavaScript(source),
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} evaluation timed out`)), 5000))
-  ]);
-  const watchWindow = (window, name) => {
-    window.webContents.on('did-fail-load', (_event, code, description, url) => reportFailure(`${name} failed to load ${url}: ${code} ${description}`));
-    window.webContents.on('render-process-gone', (_event, details) => reportFailure(`${name} renderer exited: ${details.reason}`));
-    window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-      if (level >= 3) reportFailure(`${name} console error at ${sourceId}:${line}: ${message}`);
-    });
-  };
-  try {
-    watchWindow(mainWindow, 'main');
-    mainWindow.setPosition(-10000, -10000);
-    mainWindow.showInactive();
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    console.log('UI smoke test: main window checked.');
-    settingsWindow = createToolWindow('renderer/settings/settings.html', 'Settings', 560, 760);
-    dictionaryWindow = createToolWindow('renderer/dictionary/dictionary.html', 'Dictionary', 720, 620);
-    // Off-screen windows receive native control layout without appearing to the user.
-    for (const window of [settingsWindow, dictionaryWindow]) {
-      window.setPosition(-10000, -10000);
-      window.showInactive();
-    }
-    watchWindow(settingsWindow, 'settings');
-    watchWindow(dictionaryWindow, 'dictionary');
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    console.log('UI smoke test: tool windows checked.');
-
-    const mainResult = await evaluate(mainWindow, `(() => {
-      const ids = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle', 'findSubtitleArea', 'useDetectedSubtitleArea', 'stopAutoTracking', 'saveDetectionSample'];
-      document.getElementById('playPause').click();
-      document.getElementById('playPause').click();
-      document.getElementById('ocrOnce').click();
-      const tools = document.getElementById('developerTools');
-      const hiddenBefore = tools.hidden;
-      document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled: true } }));
-      const visibleAfter = !tools.hidden;
-      document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled: false } }));
-      const hiddenAfter = tools.hidden;
-      const developerInside = ['saveOcrSample', 'saveDetectionSample', 'openOcrDiagnostics', 'findSubtitleArea', 'useDetectedSubtitleArea', 'stopAutoTracking'].every((id) => tools.contains(document.getElementById(id)));
-      const mainOutside = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle'].every((id) => !tools.contains(document.getElementById(id)));
-      return { missing: ids.filter((id) => !document.getElementById(id)), preload: Boolean(window.overlayApi), enabled: ids.filter((id) => document.getElementById(id)?.disabled), hiddenBefore, visibleAfter, hiddenAfter, developerInside, mainOutside };
-    })()`, 'main');
-    if (mainResult.missing.length || !mainResult.preload || mainResult.enabled.length || !mainResult.hiddenBefore || !mainResult.visibleAfter || !mainResult.hiddenAfter || !mainResult.developerInside || !mainResult.mainOutside) reportFailure(`main controls failed: ${JSON.stringify(mainResult)}`);
-
-    const settingsResult = await evaluate(settingsWindow, `new Promise((resolve) => setTimeout(() => {
-      const displayMode = document.getElementById('displayMode');
-      const headers = [...document.querySelectorAll('.accordionHeader')];
-      const initiallyClosed = headers.every((header) => !header.classList.contains('open')) && [...document.querySelectorAll('.accordionBody')].every((body) => !body.classList.contains('open'));
-      const displayHeader = document.querySelector('[data-section="display"]');
-      displayHeader.click(); const displayOpens = displayHeader.classList.contains('open');
-      displayHeader.click(); const displayCloses = !displayHeader.classList.contains('open');
-      displayMode.value = 'both'; displayMode.dispatchEvent(new Event('change', { bubbles: true }));
-      document.querySelectorAll('.accordionHeader').forEach((header) => {
-        if (!header.classList.contains('open')) header.click();
-      });
-      const checkboxes = [...document.querySelectorAll('input[type="checkbox"]')];
-      const ranges = [...document.querySelectorAll('input[type="range"]')];
-      const select = document.getElementById('themeSelect');
-      select.value = 'blue'; select.dispatchEvent(new Event('change', { bubbles: true }));
-      const visible = [...checkboxes, ...ranges].every((element) => getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden');
-      const sized = [...checkboxes, ...ranges].every((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0);
-      setTimeout(() => resolve({ checkboxes: checkboxes.length, ranges: ranges.length, visible, sized, theme: document.body.dataset.theme, enabled: !document.getElementById('resetDefaults').disabled, initiallyClosed, displayOpens, displayCloses }), 100);
-    }, 50))`, 'settings');
-    if (!settingsResult.checkboxes || !settingsResult.ranges || !settingsResult.visible || !settingsResult.sized || settingsResult.theme !== 'blue' || !settingsResult.enabled || !settingsResult.initiallyClosed || !settingsResult.displayOpens || !settingsResult.displayCloses) reportFailure(`Settings controls failed: ${JSON.stringify(settingsResult)}`);
-
-    settingsWindow.close();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    settingsWindow = createToolWindow('renderer/settings/settings.html', 'Settings', 560, 760);
-    settingsWindow.setPosition(-10000, -10000); settingsWindow.showInactive(); watchWindow(settingsWindow, 'settings reopened');
-    const reopenedSettings = await evaluate(settingsWindow, `new Promise((resolve) => setTimeout(() => resolve({ closed: [...document.querySelectorAll('.accordionHeader')].every((header) => !header.classList.contains('open')) && [...document.querySelectorAll('.accordionBody')].every((body) => !body.classList.contains('open')), display: !document.querySelector('[data-section="display"]').classList.contains('open'), mode: document.getElementById('displayMode').value, theme: document.getElementById('themeSelect').value }), 100))`, 'settings reopened');
-    if (!reopenedSettings.closed || !reopenedSettings.display || reopenedSettings.mode !== 'both' || reopenedSettings.theme !== 'blue') reportFailure(`Settings reopen failed: ${JSON.stringify(reopenedSettings)}`);
-
-    const appliedTheme = await evaluate(mainWindow, `document.querySelector('.panel').dataset.theme`, 'main theme');
-    if (appliedTheme !== 'blue') reportFailure(`main theme did not change: ${appliedTheme}`);
-
-    const dictionaryResult = await evaluate(dictionaryWindow, `(() => {
-      const list = document.getElementById('dictionaryList');
-      const sort = document.getElementById('dictionarySort');
-      sort.value = 'alpha-asc'; sort.dispatchEvent(new Event('change', { bubbles: true }));
-      document.getElementById('dictionaryNext').click();
-      const rect = list?.getBoundingClientRect();
-      return { list: Boolean(list), context: Boolean(document.getElementById('contextContent')), visible: rect?.width > 0 && rect?.height > 0, sort: sort.value };
-    })()`, 'dictionary');
-    if (!dictionaryResult.list || !dictionaryResult.context || !dictionaryResult.visible || dictionaryResult.sort !== 'alpha-asc') reportFailure(`Dictionary controls failed: ${JSON.stringify(dictionaryResult)}`);
-  } catch (error) {
-    reportFailure(error.stack || error.message);
-  }
-  setTimeout(() => {
-    if (failures.length) {
-      console.error(`UI smoke test failed:\n${failures.map((failure) => `- ${failure}`).join('\n')}`);
-      app.exit(1);
-    } else {
-      console.log('UI smoke test passed.');
-      app.exit(0);
-    }
-  }, 100);
-}
-
 function restoreMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.setIgnoreMouseEvents(false);
@@ -895,13 +811,11 @@ async function translateText(text, sourceLanguage, targetLanguage, scope = null)
 }
 
 async function getEnglishPhonetic(word) {
-  const normalizedWord = word.toLowerCase().replace(/[^a-z'-]/g, '').trim();
+  const normalizedWord = String(word || '').toLowerCase().replace(/[^a-z'-]/g, '').trim();
   if (!normalizedWord) return '';
 
-  const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`);
-  if (!response.ok) return '';
-
-  const data = await response.json();
+  let data;
+  try { data = await requestJson(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`, { fetch }); } catch (_) { return ''; }
   const phonetics = data?.[0]?.phonetics || [];
   return phonetics.find((item) => item.text)?.text || data?.[0]?.phonetic || '';
 }
@@ -916,24 +830,49 @@ if (!singleInstanceLock) {
 app.whenReady().then(() => {
     createWindow();
     const invalidateAutomaticArea = () => {
-      if (!automaticOcrArea) return;
-      subtitleAreaTracker.dispatch('screenChanged');
+      const hadAutomatic = Boolean(automaticOcrArea);
+      subtitleDetectionRequestId += 1;
+      automaticAreaRevision += 1;
+      clearTimeout(subtitleDetectionRetryTimer);
+      subtitleDetectionRetryTimer = null;
+      if (hadAutomatic) subtitleAreaTracker.dispatch('screenChanged');
       automaticOcrArea = null;
       automaticOcrAnchorBoundsDip = null;
+      automaticCaptureSize = null;
       automaticDisplayId = null;
+      automaticAreaAdapterState = {};
+      lastAutomaticBoundsDip = null;
+      pendingDistantCandidate = null;
+      detectedSubtitleBoundsDip = null;
+      detectedSubtitleDisplayId = null;
+      detectedSubtitleLocalArea = null;
+      detectedSubtitleCaptureSize = null;
+      const display = screen.getPrimaryDisplay();
+      const saved = loadUiSettings().ocrArea;
+      if (saved && [saved.x, saved.y, saved.width, saved.height].every(Number.isFinite) && saved.width > 0 && saved.height > 0) {
+        const area = calculateCropBounds({ imageSize: display.size, displaySize: display.size, ocrArea: saved });
+        const scale = display.scaleFactor || 1;
+        manualOcrArea = { x: area.x * scale, y: area.y * scale, width: area.width * scale, height: area.height * scale };
+        manualOcrAnchorBoundsDip = { ...area, x: display.bounds.x + area.x, y: display.bounds.y + area.y };
+      }
       syncActiveOcrArea();
       frameChangeDetector.reset();
+      hideNearSourceOverlay();
       updateDeveloperOcrZone();
+      updateDeveloperSubtitleCandidateZone();
       mainWindow?.webContents.send('ocr-area-changed', ocrArea);
-      sendTrackingStatus('Auto area lost: display changed');
-      scheduleTrackedSearch();
+      if (hadAutomatic) { sendTrackingStatus('Auto area lost: display changed'); scheduleTrackedSearch(); }
     };
     screen.on('display-metrics-changed', invalidateAutomaticArea);
     screen.on('display-added', invalidateAutomaticArea);
     screen.on('display-removed', invalidateAutomaticArea);
     if (UI_SMOKE) {
       console.log('UI smoke test: app ready.');
-      runUiSmokeTest();
+      require('../../test/integration/ui-smoke-checks').runUiSmokeTest({
+        app, mainWindow, createToolWindow, createSelectionWindow, createCaptureWindow,
+        createTranslateWindow, createNearSourceWindow,
+        getSelectionWindow: () => selectionWindow, getCaptureWindow: () => captureWindow
+      });
       return;
     }
     screenOcrWorker.initialize().catch((error) => {
@@ -945,13 +884,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
   screenOcrWorker.dispose().catch(() => {});
-  if (gameOcrWorkerPromise) {
-    gameOcrWorkerPromise.then((worker) => worker.terminate()).catch(() => {});
-  }
+  gameOcrWorker.dispose().catch(() => {});
   app.quit();
 });
 
-ipcMain.handle('open-srt', async () => {
+handleIpc('open-srt', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Choose English .srt subtitles',
     properties: ['openFile'],
@@ -965,56 +902,56 @@ ipcMain.handle('open-srt', async () => {
   return { fileName: path.basename(filePath), content };
 });
 
-ipcMain.handle('restore-window', () => {
+handleIpc('restore-window', () => {
   restoreMainWindow();
   return true;
 });
 
-ipcMain.handle('move-window', (_event, dx, dy) => {
+handleIpc('move-window', (_event, dx, dy) => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (![dx, dy].every(Number.isFinite)) return false;
   const [x, y] = mainWindow.getPosition();
-  mainWindow.setPosition(x + Number(dx || 0), y + Number(dy || 0));
+  mainWindow.setPosition(Math.round(x + dx), Math.round(y + dy));
   return true;
 });
 
-ipcMain.handle('resize-window', (_event, dw, dh) => {
+handleIpc('resize-window', (_event, dw, dh) => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (![dw, dh].every(Number.isFinite)) return false;
   const [width, height] = mainWindow.getSize();
   mainWindow.setSize(
-    Math.max(420, width + Number(dw || 0)),
-    Math.max(180, height + Number(dh || 0))
+    Math.min(1500, Math.max(620, Math.round(width + dw))),
+    Math.min(760, Math.max(260, Math.round(height + dh)))
   );
   return true;
 });
 
-ipcMain.handle('set-window-size', (_event, width, height) => {
-  if (!mainWindow || mainWindow.isDestroyed()) return false;
+handleIpc('set-window-size', (_event, width, height) => {
+  if (!mainWindow || mainWindow.isDestroyed() || ![width, height].every(Number.isFinite)) return false;
   mainWindow.setSize(
-    Math.max(620, Number(width || 0)),
-    Math.max(260, Number(height || 0))
+    Math.min(1500, Math.max(620, Math.round(width))),
+    Math.min(760, Math.max(260, Math.round(height)))
   );
   return true;
 });
 
-ipcMain.handle('open-settings-window', () => {
+handleIpc('open-settings-window', () => {
   createToolWindow('renderer/settings/settings.html', 'Subtitle Overlay Settings', 600, 620);
 });
 
-ipcMain.handle('open-dictionary-window', () => {
+handleIpc('open-dictionary-window', () => {
   createToolWindow('renderer/dictionary/dictionary.html', 'Subtitle Dictionary', 680, 560);
 });
 
-ipcMain.handle('close-current-window', (event) => {
+handleIpc('close-current-window', (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (window && window !== mainWindow) window.close();
   return true;
 });
 
-ipcMain.handle('set-ui-setting', async (_event, key, value) => {
-  const settings = loadUiSettings();
-  settings[key] = value;
-  const normalized = normalizeUiSettings(settings);
-  await saveUiSettings(normalized);
+handleIpc('set-ui-setting', async (_event, key, value) => {
+  if (typeof key !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key)) return false;
+  const normalized = await uiSettingsStore.update(settings => ({ ...settings, [key]: value }));
   updateNearSourceSettings(normalized);
   if (key === 'developerMode' || key === 'theme') {
     updateDeveloperOcrZone(normalized);
@@ -1028,9 +965,9 @@ ipcMain.handle('set-ui-setting', async (_event, key, value) => {
   return true;
 });
 
-ipcMain.handle('get-ui-settings', () => loadUiSettings());
+handleIpc('get-ui-settings', () => loadUiSettings());
 
-ipcMain.handle('reload-ui-settings', () => {
+handleIpc('reload-ui-settings', () => {
   const settings = loadUiSettings();
   mainWindow?.webContents.send('apply-ui-settings', settings);
   settingsWindow?.webContents.send('apply-ui-settings', settings);
@@ -1038,14 +975,17 @@ ipcMain.handle('reload-ui-settings', () => {
   return settings;
 });
 
-ipcMain.handle('select-ocr-area', () => {
+handleIpc('select-ocr-area', () => {
   if (!selectionWindow) createSelectionWindow();
 });
 
-ipcMain.handle('complete-ocr-area', async (_event, area) => {
-  if (!area || ![area.x, area.y, area.width, area.height].every(Number.isFinite)) return null;
+handleIpc('complete-ocr-area', async (_event, area) => {
+  if (!area || ![area.x, area.y, area.width, area.height].every(Number.isFinite) || area.width <= 0 || area.height <= 0) return null;
   const display = screen.getPrimaryDisplay();
   const scale = display.scaleFactor || 1;
+  if (area.x >= display.size.width || area.y >= display.size.height || area.x + area.width <= 0 || area.y + area.height <= 0) return null;
+  area = calculateCropBounds({ imageSize: display.size, displaySize: display.size, ocrArea: area });
+  const settings = await uiSettingsStore.update(settings => ({ ...settings, ocrArea: { x: area.x, y: area.y, width: area.width, height: area.height } }));
   manualOcrArea = {
     x: area.x * scale,
     y: area.y * scale,
@@ -1059,10 +999,9 @@ ipcMain.handle('complete-ocr-area', async (_event, area) => {
     height: area.height
   };
   if (!automaticOcrArea) syncActiveOcrArea();
+  automaticAreaRevision += 1;
   frameChangeDetector.reset();
-  const settings = loadUiSettings();
-  settings.ocrArea = { x: area.x, y: area.y, width: area.width, height: area.height };
-  await saveUiSettings(settings);
+
 
   selectionWindow?.close();
   mainWindow?.webContents.send('ocr-area-changed', ocrArea);
@@ -1071,57 +1010,52 @@ ipcMain.handle('complete-ocr-area', async (_event, area) => {
   return ocrArea;
 });
 
-ipcMain.handle('cancel-ocr-area', () => {
+handleIpc('cancel-ocr-area', () => {
   selectionWindow?.close();
 });
 
-ipcMain.handle('translate', async (_event, text, scope) => {
+handleIpc('translate', async (_event, text, scope) => {
   return translateText(text, 'en', 'ru', scope || null);
 });
 
-ipcMain.handle('translate-text', async (_event, text, sourceLanguage, targetLanguage, scope) => {
+handleIpc('translate-text', async (_event, text, sourceLanguage, targetLanguage, scope) => {
   return translateText(text, sourceLanguage, targetLanguage, scope || null);
 });
 
-ipcMain.handle('get-phonetic', async (_event, word) => {
+handleIpc('get-phonetic', async (_event, word) => {
   return getEnglishPhonetic(word);
 });
 
-ipcMain.handle('dictionary-get', async () => {
+handleIpc('dictionary-get', async () => {
   return readDictionary();
 });
 
-ipcMain.handle('dictionary-add', async (_event, entry) => {
-  const entries = await readDictionary();
-  const duplicate = entries.some((item) => (
-    (item.english || '').toLowerCase() === (entry.english || '').toLowerCase()
-    || (item.russian || '').toLowerCase() === (entry.russian || '').toLowerCase()
-  ));
-
-  if (duplicate) return { added: false, duplicate: true };
-
-  const nextEntry = {
-    ...entry,
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    addedAt: Date.now()
-  };
-  entries.push(nextEntry);
-  await writeDictionary(entries);
-  gameDictionaryCache.set((entry.english || '').toLowerCase().trim(), true);
-  dictionaryWindow?.webContents.send('dictionary-changed');
-  return { added: true, entry: nextEntry };
+handleIpc('dictionary-add', async (_event, entry) => {
+  if (!entry || typeof entry.english !== 'string' || !entry.english.trim() ||
+      (entry.russian != null && typeof entry.russian !== 'string')) throw new Error('Invalid dictionary entry');
+  const english = entry.english.trim();
+  const russian = (entry.russian || '').trim();
+  let result;
+  await dictionaryStore.update(entries => {
+    const duplicate = entries.some(item => (item.english || item.sourceText || '').trim().toLowerCase() === english.toLowerCase());
+    if (duplicate) { result = { added: false, duplicate: true }; return entries; }
+    const nextEntry = { ...entry, english, russian, id: require('node:crypto').randomUUID(), addedAt: Date.now() };
+    result = { added: true, entry: nextEntry };
+    return [...entries, nextEntry];
+  });
+  if (result.added) dictionaryWindow?.webContents.send('dictionary-changed');
+  return result;
 });
 
-ipcMain.handle('dictionary-delete', async (_event, id) => {
-  let entries = await readDictionary();
-  entries = entries.filter(entry => entry.id !== id);
-  await writeDictionary(entries);
+handleIpc('dictionary-delete', async (_event, id) => {
+  if (typeof id !== 'string' || !id) throw new Error('Invalid dictionary id');
+  await dictionaryStore.update(entries => entries.filter(entry => entry.id !== id));
   dictionaryWindow?.webContents.send('dictionary-changed');
   return { success: true };
 });
 
-ipcMain.handle('get-context-sentences', async (_event, word) => {
-  const normalizedWord = word.toLowerCase().replace(/[^a-z'-]/g, '').trim();
+handleIpc('get-context-sentences', async (_event, word) => {
+  const normalizedWord = String(word || '').toLowerCase().replace(/[^a-z'-]/g, '').trim();
   if (!normalizedWord) return [];
 
   const settings = loadUiSettings();
@@ -1129,11 +1063,10 @@ ipcMain.handle('get-context-sentences', async (_event, word) => {
   const sentences = [];
 
   try {
-    const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`);
+    const data = await requestJson(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`, { fetch });
     const addedExamples = new Set();
 
-    if (response.ok) {
-      const data = await response.json();
+    if (data) {
       if (data && Array.isArray(data)) {
         for (const entry of data) {
           if (entry.meanings && Array.isArray(entry.meanings)) {
@@ -1178,7 +1111,7 @@ ipcMain.handle('get-context-sentences', async (_event, word) => {
   return fallbackSentences;
 });
 
-ipcMain.handle('export-dictionary', async (_event, entries, format) => {
+handleIpc('export-dictionary', async (_event, entries, format) => {
   const result = await dialog.showSaveDialog(dictionaryWindow || mainWindow, {
     title: 'Export Dictionary',
     defaultPath: `dictionary.${format}`,
@@ -1209,10 +1142,12 @@ ipcMain.handle('export-dictionary', async (_event, entries, format) => {
   return true;
 });
 
-ipcMain.handle('capture-screen-subtitle-frame', async (_event, captureMode) => {
+handleIpc('capture-screen-subtitle-frame', async (_event, captureMode) => {
   const active = getActiveOcrArea();
   if (!active) return null;
   const capturedAt = performance.now();
+  const revision = automaticAreaRevision;
+  const capturedArea = active.area;
   subtitleTrackingMetrics.captureCount += 1;
   const display = automaticDisplayId ? screen.getAllDisplays().find((entry) => entry.id === automaticDisplayId) : screen.getDisplayMatching(activeOcrAnchorBoundsDip() || screen.getPrimaryDisplay().bounds);
   if (!display) return null;
@@ -1221,6 +1156,7 @@ ipcMain.handle('capture-screen-subtitle-frame', async (_event, captureMode) => {
     types: ['screen'],
     thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }
   });
+  if (revision !== automaticAreaRevision || capturedArea !== activeOcrArea()) return null;
   const captureMs = performance.now() - capturedAt;
   const source = sources.find((entry) => entry.display_id === String(display.id)) || sources[0];
   if (!source) return null;
@@ -1235,7 +1171,7 @@ ipcMain.handle('capture-screen-subtitle-frame', async (_event, captureMode) => {
   const fingerprintStartedAt = performance.now();
   const change = frameChangeDetector.inspect(crop.toBitmap(), crop.getSize(), capturedAt);
   const frameFingerprintMs = performance.now() - fingerprintStartedAt;
-  if (!change.changed) {
+  if (!change.changed && captureMode !== 'manual') {
     sendTrackingStatus('Capture: frame unchanged');
     if (process.env.OCR_DEBUG === '1') console.debug('[OCR] frame skipped', { reason: 'unchanged' });
     return null;
@@ -1246,10 +1182,11 @@ ipcMain.handle('capture-screen-subtitle-frame', async (_event, captureMode) => {
   rememberDiagnosticFrame(frameId, sourcePng, activeAreaSource() || (captureMode === 'manual' ? 'manual' : 'automatic'), display);
   const frame = {
     id: frameId,
+    areaRevision: automaticAreaRevision,
     capturedAt,
     image: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
     imageChanged: change.imageChanged,
-    forced: change.forced,
+    forced: change.forced || captureMode === 'manual',
     textLike: hasTextLikePixels(crop)
   };
   sendTrackingStatus(change.imageChanged ? 'Capture: frame changed' : 'OCR: forced check');
@@ -1268,7 +1205,7 @@ function normalizeImageBuffer(value) {
   return null;
 }
 
-ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
+handleIpc('recognize-screen-subtitle-frame', async (_event, frame) => {
   if (process.env.OCR_DEBUG === '1') {
     const value = frame?.image;
     console.debug('[OCR handler]', {
@@ -1287,7 +1224,9 @@ ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
     });
   }
   const image = normalizeImageBuffer(frame?.image);
-  if (!image) throw new Error('Invalid OCR frame');
+  if (!image?.length || !Number.isFinite(frame?.id) || !Number.isFinite(frame?.generation)) throw new Error('Invalid OCR frame');
+  const revision = automaticAreaRevision;
+  if (Number.isFinite(frame.areaRevision) && frame.areaRevision !== revision) return { text: '', stale: true };
   if (process.env.OCR_DEBUG === '1') {
     console.debug('[OCR worker input]', { isBuffer: Buffer.isBuffer(image), constructor: image.constructor.name, byteLength: image.byteLength, id: frame.id, generation: frame.generation });
   }
@@ -1301,6 +1240,7 @@ ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
   if (process.env.OCR_DEBUG === '1') console.debug('[OCR] started', request);
   try {
     const result = await screenOcrWorker.recognize(image, request);
+    if (revision !== automaticAreaRevision) return { text: '', stale: true };
     const text = cleanOcrText(result.data.text);
     const confidence = Number.isFinite(result.data.confidence) ? result.data.confidence : null;
     const ocrMs = performance.now() - startedAt;
@@ -1342,7 +1282,7 @@ ipcMain.handle('recognize-screen-subtitle-frame', async (_event, frame) => {
   }
 });
 
-ipcMain.handle('record-ocr-diagnostic-update', (_event, update) => {
+handleIpc('record-ocr-diagnostic-update', (_event, update) => {
   if (!update || typeof update !== 'object' || !Number.isFinite(update.frameId)) return false;
   const decision = update.decision;
   const translation = update.translation;
@@ -1354,22 +1294,23 @@ ipcMain.handle('record-ocr-diagnostic-update', (_event, update) => {
   return ocrDiagnosticSamples.updateLastCycle(update.frameId, { decision, translation });
 });
 
-ipcMain.handle('save-ocr-diagnostic-sample', async () => ocrDiagnosticSamples.saveLastSample());
+handleIpc('save-ocr-diagnostic-sample', async () => ocrDiagnosticSamples.saveLastSample());
 
-ipcMain.handle('save-detection-sample', async () => {
+handleIpc('save-detection-sample', async () => {
   if (!lastDetectionSample?.sourceImage) return { ok: false, error: 'NO_DETECTION_SAMPLE' };
-  const name = `detection-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const sample = lastDetectionSample;
+  const name = `detection-${new Date().toISOString().replace(/[:.]/g, '-')}-${require('node:crypto').randomUUID()}`;
   const folder = path.join(ocrDiagnosticSamples.diagnosticsPath(), name);
   try {
     await fs.mkdir(folder, { recursive: true });
-    await fs.writeFile(path.join(folder, 'detection-source.png'), lastDetectionSample.sourceImage);
-    if (lastDetectionSample.candidateImage) await fs.writeFile(path.join(folder, 'detection-candidate.png'), lastDetectionSample.candidateImage);
-    await fs.writeFile(path.join(folder, 'detection-metadata.json'), JSON.stringify(lastDetectionSample.status, null, 2), 'utf8');
+    await fs.writeFile(path.join(folder, 'detection-source.png'), sample.sourceImage);
+    if (sample.candidateImage) await fs.writeFile(path.join(folder, 'detection-candidate.png'), sample.candidateImage);
+    await fs.writeFile(path.join(folder, 'detection-metadata.json'), JSON.stringify(sample.status, null, 2), 'utf8');
     return { ok: true };
   } catch (_) { return { ok: false, error: 'SAVE_FAILED' }; }
 });
 
-ipcMain.handle('open-ocr-diagnostics-folder', async () => {
+handleIpc('open-ocr-diagnostics-folder', async () => {
   try {
     await fs.mkdir(ocrDiagnosticSamples.diagnosticsPath(), { recursive: true });
     return (await shell.openPath(ocrDiagnosticSamples.diagnosticsPath())) === '';
@@ -1379,7 +1320,7 @@ ipcMain.handle('open-ocr-diagnostics-folder', async () => {
 });
 
 async function findSubtitleArea({ tracking = false } = {}) {
-  if (loadUiSettings().developerMode !== true) return { ok: false, error: 'DEVELOPER_MODE_DISABLED' };
+  if (!tracking && loadUiSettings().developerMode !== true) return { ok: false, error: 'DEVELOPER_MODE_DISABLED' };
   if (subtitleDetectionBusy) return { ok: false, error: 'DETECTION_BUSY' };
   subtitleDetectionBusy = true;
   const requestId = ++subtitleDetectionRequestId;
@@ -1392,6 +1333,7 @@ async function findSubtitleArea({ tracking = false } = {}) {
       types: ['screen'],
       thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }
     });
+    if (requestId !== subtitleDetectionRequestId) return { ok: false, error: 'STALE_DETECTION' };
     const captureMs = performance.now() - captureStartedAt;
     const source = sources.find((entry) => entry.display_id === String(display.id)) || sources[0];
     if (!source) {
@@ -1434,6 +1376,7 @@ async function findSubtitleArea({ tracking = false } = {}) {
         if (!confirmedBySecondFrame) validation = { ...validation, valid: false, reason: 'second-frame-mismatch' };
       } else validation = { ...validation, valid: false, reason: 'second-frame-unavailable' };
     }
+    if (requestId !== subtitleDetectionRequestId) return { ok: false, error: 'STALE_DETECTION' };
     const detectorCandidate = result.bestCandidate && detectorSize.width ? { x: Math.round(result.bestCandidate.x * detectorSize.width / imageSize.width), y: Math.round(result.bestCandidate.y * detectorSize.height / imageSize.height), width: Math.round(result.bestCandidate.width * detectorSize.width / imageSize.width), height: Math.round(result.bestCandidate.height * detectorSize.height / imageSize.height) } : null;
     lastDetectionSample = {
       sourceImage: source.thumbnail.toPNG(), candidateImage: candidateBeforeValidation && validation.valid ? source.thumbnail.crop(candidateBeforeValidation).toPNG() : null,
@@ -1460,6 +1403,7 @@ async function findSubtitleArea({ tracking = false } = {}) {
     sendTrackingStatus(`Detection: found score ${candidate.score}, confidence ${candidate.confidence}, ${Math.round(candidate.width)}x${Math.round(candidate.height)}, ${Math.round(result.metrics.durationMs)} ms, ${result.candidates.length} candidates`);
     return { ok: true, found: true, metrics: { captureMs, detectorMs: result.metrics.durationMs, totalMs, candidates: result.candidates.length } };
   } catch (error) {
+    if (requestId !== subtitleDetectionRequestId) return { ok: false, error: 'STALE_DETECTION' };
     detectedSubtitleBoundsDip = null;
     detectedSubtitleDisplayId = null;
     detectedSubtitleLocalArea = null;
@@ -1503,8 +1447,8 @@ function scheduleTrackedSearch() {
   }, 2000);
 }
 
-ipcMain.handle('find-subtitle-area', () => findSubtitleArea());
-ipcMain.handle('use-detected-subtitle-area', () => {
+handleIpc('find-subtitle-area', () => findSubtitleArea());
+handleIpc('use-detected-subtitle-area', () => {
   const display = detectedSubtitleDisplayId ? screen.getAllDisplays().find((entry) => entry.id === detectedSubtitleDisplayId) : null;
   if (!detectedSubtitleBoundsDip || !display) return { ok: false, error: 'NO_DETECTED_AREA' };
   subtitleAreaTracker.dispatch('candidateFound');
@@ -1518,22 +1462,24 @@ ipcMain.handle('use-detected-subtitle-area', () => {
   sendTrackingStatus('Auto area locked');
   return { ok: true, area: ocrArea, tracking: trackingDetails() };
 });
-ipcMain.handle('stop-auto-tracking', () => { stopAutomaticTracking(); return { ok: true, area: ocrArea, tracking: trackingDetails() }; });
+handleIpc('stop-auto-tracking', () => { stopAutomaticTracking(); return { ok: true, area: ocrArea, tracking: trackingDetails() }; });
 
-ipcMain.handle('ocr-debug-metrics', (_event, metrics) => {
+handleIpc('ocr-debug-metrics', (_event, metrics) => {
   ocrMetrics.record(metrics);
 });
 
-ipcMain.handle('start-capture-translate', () => {
+handleIpc('start-capture-translate', () => {
+  if (!gameModeEnabled || gameOcrBusy) return false;
   if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
+  return true;
 });
 
-ipcMain.handle('complete-capture-translate', (_event, area) => {
+handleIpc('complete-capture-translate', (_event, area) => {
   captureWindow?.close();
-  runCaptureTranslate(area);
+  return runCaptureTranslate(area);
 });
 
-ipcMain.handle('cancel-capture-translate', () => {
+handleIpc('cancel-capture-translate', () => {
   captureWindow?.close();
 });
 
@@ -1551,7 +1497,7 @@ function gameSettingsPath() {
 
 function loadGameSettings() {
   try {
-    return JSON.parse(fsSync.readFileSync(gameSettingsPath(), 'utf8'));
+    return gameSettingsStore.read();
   } catch (_) {
     return { ...defaultGameSettings };
   }
@@ -1577,75 +1523,69 @@ function loadUiSettings() {
   }
 }
 
-let uiSettingsSaveQueue = Promise.resolve();
+const uiSettingsStore = new JsonFileStore({ filePath: uiSettingsPath, defaults: defaultUiSettings, normalize: normalizeUiSettings });
+const gameSettingsStore = new JsonFileStore({ filePath: gameSettingsPath, defaults: defaultGameSettings,
+  normalize: value => ({ ...defaultGameSettings, ...(value && typeof value === 'object' && !Array.isArray(value) ? value : {}) }) });
 
-async function saveUiSettings(settings) {
-  uiSettingsSaveQueue = uiSettingsSaveQueue.then(async () => {
-    await fs.mkdir(app.getPath('userData'), { recursive: true });
-    await fs.writeFile(uiSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
-  });
-  return uiSettingsSaveQueue;
-}
-
-ipcMain.handle('open-translate-window', () => {
+handleIpc('open-translate-window', () => {
   createTranslateWindow();
 });
 
-ipcMain.handle('get-game-settings', () => loadGameSettings());
+handleIpc('get-game-settings', () => loadGameSettings());
 
-ipcMain.handle('set-game-setting', async (_event, key, value) => {
-  const settings = loadGameSettings();
-  settings[key] = value;
-  await saveGameSettings(settings);
+handleIpc('set-game-setting', async (_event, key, value) => {
+  if (typeof key !== 'string' || !Object.hasOwn(defaultGameSettings, key)) return false;
+  await gameSettingsStore.update(settings => ({ ...settings, [key]: value }));
   return true;
 });
 
-ipcMain.handle('set-game-mode-enabled', (_event, enabled) => {
-  gameModeEnabled = enabled;
+handleIpc('set-game-mode-enabled', (_event, enabled) => {
+  gameModeEnabled = Boolean(enabled);
+  gameRequestId += 1;
+  translationService.abortScope('game');
   if (gameModeEnabled) hideNearSourceOverlay();
+  else captureWindow?.close();
   return true;
 });
 
-ipcMain.handle('show-near-source-overlay', (_event, payload) => showNearSourceOverlay(payload));
-ipcMain.handle('hide-near-source-overlay', () => { hideNearSourceOverlay(); return true; });
-ipcMain.handle('clear-near-source-overlay', () => {
+handleIpc('show-near-source-overlay', (_event, payload) => showNearSourceOverlay(payload));
+handleIpc('hide-near-source-overlay', () => { hideNearSourceOverlay(); return true; });
+handleIpc('clear-near-source-overlay', () => {
   nearSourceContent = null;
   hideNearSourceOverlay();
   return true;
 });
-ipcMain.handle('update-near-source-settings', (_event, settings) => {
+handleIpc('update-near-source-settings', (_event, settings) => {
   if (!settings || typeof settings !== 'object') return false;
   updateNearSourceSettings(settings);
   return true;
 });
-ipcMain.handle('near-source-overlay-measured', (_event, size) => placeNearSourceOverlay(size));
+handleIpc('near-source-overlay-measured', (_event, size) => placeNearSourceOverlay(size));
 
 let currentGameHotkey = 'CommandOrControl+Shift+T';
 function registerGameHotkey(accelerator) {
+  if (typeof accelerator !== 'string' || !accelerator.trim()) return false;
+  accelerator = accelerator.trim();
+  if (['CommandOrControl+Shift+O', 'CommandOrControl+Shift+H', 'CommandOrControl+Shift+S'].includes(accelerator)) return false;
+  if (accelerator === currentGameHotkey && gameHotkeyRegistered) return true;
   try {
-    globalShortcut.unregister(currentGameHotkey);
-  } catch (_) {}
-  currentGameHotkey = accelerator;
-  try {
-    globalShortcut.register(accelerator, () => {
-      if (!gameModeEnabled) {
-        mainWindow?.webContents.send('game-mode-disabled');
-        return;
-      }
-      if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
+    const registered = globalShortcut.register(accelerator, () => {
+      if (!gameModeEnabled) { mainWindow?.webContents.send('game-mode-disabled'); return; }
+      if (!gameOcrBusy && (!captureWindow || captureWindow.isDestroyed())) createCaptureWindow();
     });
+    if (!registered) return false;
+    if (gameHotkeyRegistered) globalShortcut.unregister(currentGameHotkey);
+    currentGameHotkey = accelerator;
+    gameHotkeyRegistered = true;
     return true;
-  } catch (_) {
-    return false;
-  }
+  } catch (_) { return false; }
 }
+let gameHotkeyRegistered = false;
 
-ipcMain.handle('set-game-hotkey', async (_event, accelerator) => {
-  const ok = registerGameHotkey(accelerator);
-  if (ok) {
-    const settings = loadUiSettings();
-    settings.hotkey = accelerator;
-    await saveUiSettings(settings);
-  }
-  return ok;
+handleIpc('set-game-hotkey', async (_event, accelerator) => {
+  const previous = currentGameHotkey;
+  if (!registerGameHotkey(accelerator)) return false;
+  try { await uiSettingsStore.update(settings => ({ ...settings, hotkey: currentGameHotkey })); }
+  catch (error) { registerGameHotkey(previous); throw error; }
+  return true;
 });

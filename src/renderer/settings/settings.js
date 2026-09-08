@@ -26,14 +26,16 @@ const developerModeToggle = document.getElementById('developerModeToggle');
 let uiSettingSaveQueue = Promise.resolve();
 
 function setUiSettingQueued(key, value) {
-  uiSettingSaveQueue = uiSettingSaveQueue.then(() => window.overlayApi.setUiSetting(key, value));
+  uiSettingSaveQueue = uiSettingSaveQueue.then(() => window.overlayApi.setUiSetting(key, value)).catch(error => { setStatus(`Could not save settings: ${error.message}`); return false; });
   return uiSettingSaveQueue;
 }
 
+let statusTimer;
 function setStatus(message) {
+  clearTimeout(statusTimer);
   statusElement.textContent = message;
   statusElement.hidden = false;
-  setTimeout(() => { statusElement.hidden = true; }, 2000);
+  statusTimer = setTimeout(() => { statusElement.hidden = true; }, 2000);
 }
 
 function updateNearSourceVisibility() { nearSourceSettings.hidden = displayMode.value === 'panel'; }
@@ -78,7 +80,7 @@ fontSelect.addEventListener('change', () => setUiSettingQueued('font', fontSelec
 gameHotkey.addEventListener('change', async () => {
   const acc = gameHotkey.value.trim();
   if (!acc) return;
-  const ok = await window.overlayApi.setGameHotkey(acc);
+  const ok = await window.overlayApi.setGameHotkey(acc).catch(() => false);
   if (!ok) {
     setStatus('Invalid hotkey');
   }

@@ -1,18 +1,34 @@
-/.opencode
-# Build output
-dist/
-
-# Electron build cache
-release/
-
-# Installer artifacts
-*.exe
-*.msi
-*.zip
-*.7z
-
-# Node
+# Dependencies
 node_modules/
 
-# Generated test coverage reports
+# Generated builds and coverage
+/dist/
+/release/
 /coverage/
+/.nyc_output/
+
+# Local agent output (shared .agent/WORKFLOW.md stays tracked)
+/.agent/logs/
+/.agent/tmp/
+
+# Local recovery archives and agent context
+/.archive/
+/.opencode/
+/.opencode_backup/
+/.opencode_context_current/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+
+# Local environment
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

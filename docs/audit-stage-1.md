@@ -2,11 +2,13 @@
 
 Date: 2026-09-08. Scope: existing application logic, tests, recovery, data integrity and packaging. No stage-2 features were added.
 
+> Historical snapshot of the stage-1 / 0.2.1 work. Counts, dependency audit results and artifact paths below describe that run, not a fresh verification of the current tree. The subsequent [0.2.2 OCR correction](ocr-quality-0.2.2.md) records later changes. Generated logs and executables may not exist in a fresh checkout.
+
 ## Baseline and result
 
 The baseline passed 141 unit tests and a three-window UI smoke test despite the defects below. Its 96.98% line coverage counted only loaded modules and omitted the main process and renderers, so it was not whole-application coverage.
 
-The final full verification passes **209 tests**, with zero failures, skipped tests or cancellations. Coverage now includes **every JavaScript source file under src/**, including the main process and renderers:
+The stage-1 final full verification passed **209 tests**, with zero failures, skipped tests or cancellations. Coverage now includes **every JavaScript source file under src/**, including the main process and renderers:
 
 | Metric | Covered / total | Coverage |
 | --- | --- | --- |
@@ -57,6 +59,8 @@ The baseline npm audit reported 13 findings (1 critical, 11 high, 1 moderate). T
 - git diff --check: passed; Git may emit its existing LF/CRLF warning for .gitignore.
 
 Build logs and the full verification log are in coverage/. The portable artifact is dist/audit-stage-1/Subtitle-Translator-Overlay-0.2.1.exe. Code signing is disabled by the existing build configuration; the default Electron icon remains.
+
+For current commands and verification policy, see the [README](../README.md) and [working rules](../AGENTS.md).
 
 ## Boundaries and remaining validation
 

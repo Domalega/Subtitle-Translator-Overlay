@@ -1,5 +1,7 @@
 # Architecture
 
+This describes the current 0.2.2 source. See [working rules](../AGENTS.md) for development and verification policy and the [README](../README.md) for user-facing setup.
+
 ## Main Process
 
 `src/main.js` is the Electron entry point. `src/main/app.js` owns Electron windows, global shortcuts, file dialogs, screen capture, Tesseract workers, persisted JSON files, dictionary storage, and network translation calls.
@@ -11,7 +13,6 @@ Main windows currently loaded by `BrowserWindow.loadFile()` are:
 - `src/renderer/dictionary/dictionary.html`: dictionary tool window.
 - `src/renderer/capture/select.html`: Screen OCR area selection window.
 - `src/renderer/capture/capture-select.html`: Game mode capture selection window.
-- `src/legacy/translate-window.html`: legacy translation window, kept for a later architecture pass.
 - `src/renderer/overlays/near-source/near-source-overlay.html`: independent transparent translation-only window.
 - `src/renderer/overlays/developer-zone/developer-ocr-zone.html`: transparent, mouse-pass-through diagnostic border outside the saved OCR crop.
 
@@ -51,7 +52,7 @@ These modules do not require Electron and can be tested with `node:test`.
 3. Main stores the selected OCR area and broadcasts `ocr-area-changed`.
 4. The main overlay enables `Read once` and `Start` behavior through `ScreenOcrCoordinator`.
 5. `ScreenOcrCoordinator` polls `capture-screen-subtitle-frame` every 200 ms, with changed-frame detection and periodic forced refreshes; `Read once` forces capture.
-6. Main returns a cropped frame and area revision. `recognize-screen-subtitle-frame` runs the serialized Tesseract worker, rejects stale area revisions, cleans OCR text and returns text. Capture and recognition queues track generations across Stop/Start. The legacy `read-screen-subtitle` path remains available.
+6. Main returns a cropped frame and area revision. `recognize-screen-subtitle-frame` prepares the crop with `src/main/services/subtitle-image-preprocessor.js` (component filtering, polarity, border and letter-height normalization), then runs the serialized Tesseract worker, rejects stale area revisions, cleans OCR text and returns text. Capture and recognition queues track generations across Stop/Start. The legacy `read-screen-subtitle` path remains available.
 7. `SubtitleStabilizer` filters empty OCR, OCR noise, duplicate subtitles, similar subtitles, and growing candidates.
 8. Accepted candidates are translated through the existing `translate` IPC path.
 9. `MainPanelOutput` updates the main English and Russian text columns.
@@ -78,7 +79,7 @@ The overlay renderer uses `textContent`, measures its card on `requestAnimationF
 6. Main sends `capture-result` to the main overlay window.
 7. Renderer displays the Game mode result in the main window.
 
-Game mode still outputs to the main overlay. The legacy `translate-window` is not opened automatically.
+Game mode outputs to the main overlay.
 Near-source overlay is hidden while Game mode is enabled and capture results never route to it.
 
 ## Developer Diagnostics
@@ -128,9 +129,6 @@ Delete confirmation is controlled by normalized UI settings.
 
 SRT parsing and `open-srt` IPC still exist in code. The current UI does not expose SRT loading and this refactor does not activate it.
 
-## Legacy Translate Window
-
-`src/legacy/translate-window.html` and `src/legacy/translate-window.js` are kept. The current Game mode output is still displayed in the main overlay window and this refactor does not automatically open the translation window.
 
 ## IPC Directions
 
@@ -162,7 +160,6 @@ Renderer to main through `ipcRenderer.invoke()`:
 - `start-capture-translate`
 - `complete-capture-translate`
 - `cancel-capture-translate`
-- `open-translate-window`
 - `set-game-mode-enabled`
 - `get-ui-settings`
 - `set-game-hotkey`
@@ -176,6 +173,7 @@ Renderer to main through `ipcRenderer.invoke()`:
 
 Main to renderer through `webContents.send()`:
 
+- `developer-status`
 - `capture-result`
 - `game-mode-disabled`
 - `toggle-controls`
@@ -193,4 +191,6 @@ There is no `ipcRenderer.send()` usage in the current source.
 
 ## Offline OCR and validation
 
-Tesseract workers use the local English model with downloads/cache writes disabled. In packaged builds the model lives in resources/eng.traineddata and the worker/WASM live outside ASAR. OcrWorkerService serializes jobs, bounds initialization/recognition/disposal and retires late workers. See [stage-1 audit](audit-stage-1.md) for regression coverage, integration checks and remaining OS acceptance work.
+Tesseract workers use the local English model with downloads/cache writes disabled. The source model is `resources/ocr/eng.traineddata`. In packaged builds it lives in `resources/eng.traineddata`; all runtime `node_modules`, including the worker/WASM and their dependencies, are unpacked outside ASAR. OcrWorkerService serializes jobs, bounds initialization/recognition/disposal and retires late workers. See [stage-1 audit](audit-stage-1.md) for regression coverage, integration checks and remaining OS acceptance work.
+
+The [OCR 0.2.2 report](ocr-quality-0.2.2.md) describes sample replay and preprocessing evidence. `npm run verify` checks source-mode integration; `test/integration/packaged-ocr-smoke.js` is a separate check using the packaged executable and its resources.

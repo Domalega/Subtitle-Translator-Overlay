@@ -1,137 +1,64 @@
 'use strict';
-async function runUiSmokeTest({ app, mainWindow, createToolWindow, createSelectionWindow, createCaptureWindow, createNearSourceWindow, getSelectionWindow, getCaptureWindow }) {
-  let settingsWindow, dictionaryWindow;
-
-  console.log('UI smoke test: loading windows.');
-  const failures = [];
-  const reportFailure = (message) => failures.push(message);
-  const waitLoaded = window => new Promise((resolve, reject) => {
-    if (!window.webContents.isLoading()) return resolve();
-    window.webContents.once('did-finish-load', resolve);
-    window.webContents.once('did-fail-load', (_event, code, description) => reject(new Error(description + ' (' + code + ')')));
-  });
-  const evaluate = async (window, source, name) => {
-    let timer;
-    try {
-      await waitLoaded(window);
-      return await Promise.race([
-        window.webContents.executeJavaScript(source),
-        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(name + ' evaluation timed out')), 5000); })
-      ]);
-    } finally { clearTimeout(timer); }
-  };
-
-  const watchWindow = (window, name) => {
-    window.webContents.on('did-fail-load', (_event, code, description, url) => reportFailure(`${name} failed to load ${url}: ${code} ${description}`));
-    window.webContents.on('render-process-gone', (_event, details) => reportFailure(`${name} renderer exited: ${details.reason}`));
-    window.webContents.on('console-message', ({ level, message, lineNumber: line, sourceId }) => {
-      if (level === 'error') reportFailure(`${name} console error at ${sourceId}:${line}: ${message}`);
-    });
-  };
+const fs=require('node:fs');const path=require('node:path');
+async function runUiSmokeTest({app,mainWindow,createToolWindow,createSelectionWindow,createCaptureWindow,createNearSourceWindow,getSelectionWindow,getCaptureWindow}) {
+  const failures=[];
+  const screenshotRoot=path.resolve(__dirname,'../../.agent/tmp/ui-preview');fs.mkdirSync(screenshotRoot,{recursive:true});
+  const loaded=win=>new Promise((resolve,reject)=>{ if(!win.webContents.isLoading())return resolve();win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,_code,message)=>reject(Error(message))); });
+  const evaluate=async(win,code)=>{let timer;try{return await Promise.race([(async()=>{await loaded(win);if(!win.webContents.debugger.isAttached())win.webContents.debugger.attach('1.3');const reply=await win.webContents.debugger.sendCommand('Runtime.evaluate',{expression:code,awaitPromise:true,returnByValue:true});if(reply.exceptionDetails)throw Error(JSON.stringify(reply.exceptionDetails));return reply.result.value})(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('UI evaluation timed out: '+code.slice(0,120))),7000)})]);}finally{clearTimeout(timer)}};
+  const watch=(win,name)=>{win.webContents.on('console-message',({level,message})=>{if(level==='error')failures.push(name+': '+message)});};
+  const settle=()=>new Promise(resolve=>setTimeout(resolve,100));
+  const screenshot=async(win,name)=>{console.log('UI preview: '+name);await settle();win.hide();fs.writeFileSync(path.join(screenshotRoot,name+'.png'),(await win.webContents.capturePage(undefined,{stayHidden:true,stayAwake:true})).toPNG());win.showInactive();};
+  const check=(ok,message)=>{if(!ok)failures.push(message);};
   try {
-    watchWindow(mainWindow, 'main');
-    mainWindow.setPosition(-10000, -10000);
-    mainWindow.showInactive();
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    console.log('UI smoke test: main window checked.');
-    settingsWindow = createToolWindow('renderer/settings/settings.html', 'Settings', 560, 760);
-    dictionaryWindow = createToolWindow('renderer/dictionary/dictionary.html', 'Dictionary', 720, 620);
-    // Off-screen windows receive native control layout without appearing to the user.
-    for (const window of [settingsWindow, dictionaryWindow]) {
-      window.setPosition(-10000, -10000);
-      window.showInactive();
+    watch(mainWindow,'main');mainWindow.setPosition(-10000,-10000);mainWindow.showInactive();await loaded(mainWindow);await settle();
+    check(await evaluate(mainWindow,"document.documentElement.lang==='en' && !document.getElementById('gameModeToggle') && !document.getElementById('focusToggle') && !document.getElementById('developerTools')"),'Removed modes or diagnostics remain in main UI');
+    check(await evaluate(mainWindow,"!document.getElementById('captureHotkey') && document.getElementById('status').hidden && getComputedStyle(document.querySelector('.footer')).display==='none'"),'Main status or hotkey is visible outside developer mode');
+    await evaluate(mainWindow,"window.overlayApi.setUiSetting('developerMode',true)"); await settle();
+    check(await evaluate(mainWindow,"!document.getElementById('status').hidden && getComputedStyle(document.querySelector('.footer')).display!=='none'"),'Developer mode did not reveal status');
+    await evaluate(mainWindow,"window.overlayApi.setUiSetting('developerMode',false)"); await settle();
+    await screenshot(mainWindow,'main-first-run-dark');
+    const settings=createToolWindow('renderer/settings/settings.html','Settings',600,760);
+    const dictionary=createToolWindow('renderer/dictionary/dictionary.html','Dictionary',720,620);
+    for(const [win,name] of [[settings,'settings'],[dictionary,'dictionary']]){watch(win,name);win.setPosition(-10000,-10000);win.showInactive();await loaded(win);}
+    check(await evaluate(settings,"JSON.stringify([...document.getElementById('themeSelect').options].map(x=>x.value))===JSON.stringify(['dark','light'])"),'Theme picker must have exactly dark and light');
+    await evaluate(settings,"document.getElementById('displayMode').value='both';document.getElementById('displayMode').dispatchEvent(new Event('change'));uiSettingSaveQueue");
+    await evaluate(settings,"document.querySelector('[data-settings-section=display]').click()");await screenshot(settings,'settings-dark');
+    for(const theme of ['light','dark']){
+      await evaluate(settings,`document.getElementById('themeSelect').value='${theme}';document.getElementById('themeSelect').dispatchEvent(new Event('change'));uiSettingSaveQueue`);await settle();
+      for(const [win,name] of [[mainWindow,'main'],[settings,'settings'],[dictionary,'dictionary']])check(await evaluate(win,`document.documentElement.dataset.theme==='${theme}'`),name+' did not adopt '+theme);
+      await screenshot(settings,'settings-'+theme);await evaluate(settings,"document.querySelector('[data-settings-section=appearance]').click()");await screenshot(settings,'appearance-'+theme);await evaluate(settings,"document.querySelector('[data-settings-section=display]').click()");
+      await evaluate(mainWindow,"document.getElementById('welcome').hidden=true;document.getElementById('englishText').textContent='There is always another way to see the world.';document.getElementById('russianText').textContent='Всегда есть другой способ увидеть мир.';document.getElementById('originalDetails').open=false;hasOcrArea=true;document.getElementById('areaStatus').textContent='Subtitle area selected';updateControls()");
+      await screenshot(mainWindow,'main-'+theme);
+      mainWindow.setSize(620,260);await settle();
+      check(await evaluate(mainWindow,"document.documentElement.scrollWidth <= innerWidth && document.querySelector('.workspace').clientHeight>50 && document.getElementById('playPause').getBoundingClientRect().width>0"),'Minimum main size loses controls');
+      await screenshot(mainWindow,'main-small-'+theme);mainWindow.setSize(980,360);
     }
-    watchWindow(settingsWindow, 'settings');
-    watchWindow(dictionaryWindow, 'dictionary');
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    console.log('UI smoke test: tool windows checked.');
-
-    const mainResult = await evaluate(mainWindow, `(() => {
-      const ids = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle', 'findSubtitleArea', 'useDetectedSubtitleArea', 'stopAutoTracking', 'saveDetectionSample'];
-      document.getElementById('playPause').click();
-      document.getElementById('playPause').click();
-      document.getElementById('ocrOnce').click();
-      const tools = document.getElementById('developerTools');
-      const hiddenBefore = tools.hidden;
-      document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled: true } }));
-      const visibleAfter = !tools.hidden;
-      document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled: false } }));
-      const hiddenAfter = tools.hidden;
-      const developerInside = ['saveOcrSample', 'saveDetectionSample', 'openOcrDiagnostics', 'findSubtitleArea', 'useDetectedSubtitleArea', 'stopAutoTracking'].every((id) => tools.contains(document.getElementById(id)));
-      const mainOutside = ['playPause', 'ocrOnce', 'settingsToggle', 'dictionaryOpen', 'gameModeToggle'].every((id) => !tools.contains(document.getElementById(id)));
-      return { missing: ids.filter((id) => !document.getElementById(id)), preload: Boolean(window.overlayApi), enabled: ids.filter((id) => document.getElementById(id)?.disabled), hiddenBefore, visibleAfter, hiddenAfter, developerInside, mainOutside };
-    })()`, 'main');
-    if (mainResult.missing.length || !mainResult.preload || mainResult.enabled.length || !mainResult.hiddenBefore || !mainResult.visibleAfter || !mainResult.hiddenAfter || !mainResult.developerInside || !mainResult.mainOutside) reportFailure(`main controls failed: ${JSON.stringify(mainResult)}`);
-
-    const settingsResult = await evaluate(settingsWindow, `new Promise((resolve) => setTimeout(() => {
-      const displayMode = document.getElementById('displayMode');
-      const headers = [...document.querySelectorAll('.accordionHeader')];
-      const initiallyClosed = headers.every((header) => !header.classList.contains('open')) && [...document.querySelectorAll('.accordionBody')].every((body) => !body.classList.contains('open'));
-      const displayHeader = document.querySelector('[data-section="display"]');
-      displayHeader.click(); const displayOpens = displayHeader.classList.contains('open');
-      displayHeader.click(); const displayCloses = !displayHeader.classList.contains('open');
-      displayMode.value = 'both'; displayMode.dispatchEvent(new Event('change', { bubbles: true }));
-      document.querySelectorAll('.accordionHeader').forEach((header) => {
-        if (!header.classList.contains('open')) header.click();
-      });
-      const checkboxes = [...document.querySelectorAll('input[type="checkbox"]')];
-      const ranges = [...document.querySelectorAll('input[type="range"]')];
-      const select = document.getElementById('themeSelect');
-      select.value = 'blue'; select.dispatchEvent(new Event('change', { bubbles: true }));
-      const visible = [...checkboxes, ...ranges].every((element) => getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden');
-      const sized = [...checkboxes, ...ranges].every((element) => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0);
-      setTimeout(() => resolve({ checkboxes: checkboxes.length, ranges: ranges.length, visible, sized, theme: document.body.dataset.theme, enabled: !document.getElementById('resetDefaults').disabled, initiallyClosed, displayOpens, displayCloses }), 100);
-    }, 50))`, 'settings');
-    if (!settingsResult.checkboxes || !settingsResult.ranges || !settingsResult.visible || !settingsResult.sized || settingsResult.theme !== 'blue' || !settingsResult.enabled || !settingsResult.initiallyClosed || !settingsResult.displayOpens || !settingsResult.displayCloses) reportFailure(`Settings controls failed: ${JSON.stringify(settingsResult)}`);
-
-    settingsWindow.close();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    settingsWindow = createToolWindow('renderer/settings/settings.html', 'Settings', 560, 760);
-    settingsWindow.setPosition(-10000, -10000); settingsWindow.showInactive(); watchWindow(settingsWindow, 'settings reopened');
-    const reopenedSettings = await evaluate(settingsWindow, `new Promise((resolve) => setTimeout(() => resolve({ closed: [...document.querySelectorAll('.accordionHeader')].every((header) => !header.classList.contains('open')) && [...document.querySelectorAll('.accordionBody')].every((body) => !body.classList.contains('open')), display: !document.querySelector('[data-section="display"]').classList.contains('open'), mode: document.getElementById('displayMode').value, theme: document.getElementById('themeSelect').value }), 100))`, 'settings reopened');
-    if (!reopenedSettings.closed || !reopenedSettings.display || reopenedSettings.mode !== 'both' || reopenedSettings.theme !== 'blue') reportFailure(`Settings reopen failed: ${JSON.stringify(reopenedSettings)}`);
-
-    const appliedTheme = await evaluate(mainWindow, `document.querySelector('.panel').dataset.theme`, 'main theme');
-    if (appliedTheme !== 'blue') reportFailure(`main theme did not change: ${appliedTheme}`);
-
-    const dictionaryResult = await evaluate(dictionaryWindow, `(() => {
-      const list = document.getElementById('dictionaryList');
-      const sort = document.getElementById('dictionarySort');
-      sort.value = 'alpha-asc'; sort.dispatchEvent(new Event('change', { bubbles: true }));
-      document.getElementById('dictionaryNext').click();
-      const rect = list?.getBoundingClientRect();
-      return { list: Boolean(list), context: Boolean(document.getElementById('contextContent')), visible: rect?.width > 0 && rect?.height > 0, sort: sort.value };
-    })()`, 'dictionary');
-    if (!dictionaryResult.list || !dictionaryResult.context || !dictionaryResult.visible || dictionaryResult.sort !== 'alpha-asc') reportFailure(`Dictionary controls failed: ${JSON.stringify(dictionaryResult)}`);
-
-    for (const create of [createSelectionWindow, createCaptureWindow]) create();
-    const extraWindows = [getSelectionWindow(), getCaptureWindow(), createNearSourceWindow()];
-    for (const window of extraWindows) {
-      watchWindow(window, 'auxiliary');
-      const result = await evaluate(window, '({ bridge: Boolean(window.overlayApi), body: Boolean(document.body), node: typeof require, scripts: document.scripts.length })', 'auxiliary');
-      if (!result.bridge || !result.body || result.node !== 'undefined' || !result.scripts) reportFailure('Auxiliary window bridge/sandbox failed: ' + JSON.stringify(result));
+    // Cancel a real selection window; text and controller state must survive.
+    await evaluate(mainWindow,"document.getElementById('captureTranslate').click()");await settle();
+    check(await evaluate(mainWindow,"capturePending && document.getElementById('playPause').disabled"),'Capture did not pause controls');
+    const capture=getCaptureWindow();check(Boolean(capture),'Capture window was not created');
+    if(capture)await evaluate(mainWindow,'window.overlayApi.cancelCaptureTranslate()');await settle();
+    check(await evaluate(mainWindow,"!capturePending && document.getElementById('russianText').textContent==='Всегда есть другой способ увидеть мир.'"),'Cancel lost previous translation');
+    // Rendering a long result must keep every line reachable.
+    await evaluate(mainWindow,"document.getElementById('russianText').textContent='A long translated line. '.repeat(150);document.getElementById('originalDetails').open=true");
+    check(await evaluate(mainWindow,"getComputedStyle(document.querySelector('.subtitleBox')).overflowY==='auto' && document.querySelector('.subtitleBox').scrollHeight>document.querySelector('.subtitleBox').clientHeight"),'Long results are not scrollable');
+    await evaluate(mainWindow,"Promise.all(Array.from({length:23},(_,i)=>window.overlayApi.dictionaryAdd({english:'Example word '+i,russian:'Пример перевода '+i})))");await settle();
+    check(await evaluate(dictionary,"document.querySelectorAll('.dictionaryItem').length===20 && !document.getElementById('dictionaryNext').disabled"),'Dictionary paging failed');
+    await screenshot(dictionary,'dictionary-dark');
+    await evaluate(dictionary,"document.getElementById('studyButton').click()");await settle();
+    check(await evaluate(dictionary,"document.getElementById('studyModal').getAttribute('role')==='dialog' && document.getElementById('studyModal').contains(document.activeElement)"),'Review dialog focus failed');
+    await screenshot(dictionary,'review-dark');
+    await evaluate(dictionary,"document.getElementById('closeStudyModal').click()");
+    await evaluate(settings,"document.getElementById('resetDefaults').click()");await settle();
+    check(await evaluate(settings,"document.getElementById('resetModal').classList.contains('show') && document.querySelector('.settingsContent').inert"),'Reset confirmation did not isolate focus');
+    await evaluate(settings,"document.getElementById('cancelReset').click()");
+    for(const create of [createSelectionWindow,createCaptureWindow]) create();
+    for(const win of [getSelectionWindow(),getCaptureWindow(),createNearSourceWindow()]){
+      watch(win,'auxiliary');check(await evaluate(win,"typeof require==='undefined' && Boolean(window.overlayApi)"),'Auxiliary isolation failed');
     }
-    const beforeWords = await evaluate(dictionaryWindow, 'window.overlayApi.dictionaryGet()', 'dictionary before');
-    await evaluate(mainWindow, "Promise.all(['audit alpha', 'audit bravo', 'audit charlie'].map(english => window.overlayApi.dictionaryAdd({ english, russian: '' })))", 'dictionary concurrent add');
-    const afterWords = await evaluate(dictionaryWindow, 'window.overlayApi.dictionaryGet()', 'dictionary after');
-    if (afterWords.length !== beforeWords.length + 3) reportFailure('Concurrent IPC lost dictionary entries');
-    const noArea = await evaluate(mainWindow, 'window.overlayApi.stopAutoTracking()', 'clear OCR area');
-    if (!noArea.ok) reportFailure('Clearing OCR area failed');
-    await evaluate(mainWindow, "document.getElementById('gameModeToggle').click()", 'enable Game mode');
-    await evaluate(mainWindow, "new Promise(resolve => setTimeout(() => resolve(document.getElementById('playPause').disabled), 50))", 'Game mode buttons').then(disabled => { if (!disabled) reportFailure('Screen OCR remained enabled in Game mode'); });
-    await evaluate(mainWindow, "document.getElementById('gameModeToggle').click()", 'disable Game mode');
-  } catch (error) {
-    reportFailure(error.stack || error.message);
-  }
-  setTimeout(() => {
-    if (failures.length) {
-      console.error(`UI smoke test failed:\n${failures.map((failure) => `- ${failure}`).join('\n')}`);
-      app.exit(1);
-    } else {
-      console.log('UI smoke test passed.');
-      app.exit(0);
-    }
-  }, 100);
+    settings.close();await settle();const reopened=createToolWindow('renderer/settings/settings.html','Settings',600,760);await loaded(reopened);await settle();
+    check(await evaluate(reopened,"document.getElementById('themeSelect').value==='dark' && document.getElementById('displayMode').value==='both'"),'Settings did not persist after reopen');
+  }catch(error){failures.push(error.stack||error.message);}
+  if(failures.length){console.error('UI smoke test failed:\n'+failures.join('\n'));app.exit(1);}else{console.log('UI smoke test passed. Previews: '+screenshotRoot);app.exit(0);}
 }
-
-module.exports = { runUiSmokeTest };
+module.exports={runUiSmokeTest};

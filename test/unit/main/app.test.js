@@ -14,15 +14,15 @@ test('concurrent dictionary additions retain every word, including untranslated 
 });
 test('concurrent settings updates preserve separate fields', async t => {
   const h = mainHarness(t);
-  await Promise.all([h.invoke('set-ui-setting', 'theme', 'blue'), h.invoke('set-ui-setting', 'fontScale', 130)]);
+  await Promise.all([h.invoke('set-ui-setting', 'theme', 'light'), h.invoke('set-ui-setting', 'fontScale', 130)]);
   const settings = h.invoke('get-ui-settings');
-  assert.equal(settings.theme, 'blue'); assert.equal(settings.fontScale, 130);
+  assert.equal(settings.theme, 'light'); assert.equal(settings.fontScale, 130);
 });
 test('failed settings write does not poison later saves', async t => {
   const h = mainHarness(t);
   const file = path.join(h.folder, 'ui-settings.json');
   fs.mkdirSync(file);
-  await assert.rejects(h.invoke('set-ui-setting', 'theme', 'blue'));
+  await assert.rejects(h.invoke('set-ui-setting', 'theme', 'light'));
   fs.rmdirSync(file);
   await h.invoke('set-ui-setting', 'fontScale', 120);
   assert.equal(h.invoke('get-ui-settings').fontScale, 120);

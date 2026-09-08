@@ -7,8 +7,6 @@ const playPauseButton = document.getElementById('playPause');
 const ocrOnceButton = document.getElementById('ocrOnce');
 const addWordButton = document.getElementById('addWord');
 const dictionaryOpenButton = document.getElementById('dictionaryOpen');
-const focusToggleButton = document.getElementById('focusToggle');
-const gameModeToggleButton = document.getElementById('gameModeToggle');
 const settingsToggleButton = document.getElementById('settingsToggle');
 const statusElement = document.getElementById('status');
 const englishTextElement = document.getElementById('englishText');
@@ -94,13 +92,13 @@ function isRussianText(text) {
 }
 
 async function addSelectedWord() {
-  const selectedText = cleanSelectedWord(window.getSelection().toString());
+  const selectedText = cleanSelectedWord(window.getSelection().toString() || selectedWord);
   if (!selectedText) {
-    statusElement.textContent = 'Select a word in English or Russian subtitles first';
+    actionStatus.hidden = false; actionStatus.textContent = window.I18n.t("select.a.word.in.english.or.russian.subtitles.first");
     return;
   }
 
-  statusElement.textContent = 'Adding word...';
+  actionStatus.hidden = false; actionStatus.textContent = window.I18n.t("adding.word");
 
   try {
     const selectedIsRussian = isRussianText(selectedText);
@@ -119,13 +117,13 @@ async function addSelectedWord() {
     });
 
     if (result.duplicate) {
-      statusElement.textContent = 'This word is already in dictionary';
+      actionStatus.hidden = false; actionStatus.textContent = window.I18n.t("this.word.is.already.in.dictionary");
       return;
     }
 
-    statusElement.textContent = `Added: ${english} - ${russian}`;
+    actionStatus.hidden = false; actionStatus.textContent = `Added: ${english} - ${russian}`;
   } catch (error) {
-    statusElement.textContent = `Could not add word: ${error.message}`;
+    actionStatus.hidden = false; actionStatus.textContent = `Could not add word: ${error.message}`;
   }
 }
 
@@ -141,14 +139,14 @@ async function showCue(index) {
 
   const cue = cues[index];
   englishTextElement.textContent = cue.text;
-  russianTextElement.textContent = 'Translating...';
+  russianTextElement.textContent = window.I18n.t('translating');
 
   try {
     const translated = await translate(cue.text);
     if (currentIndex === requestIndex) russianTextElement.textContent = translated;
   } catch (error) {
     if (currentIndex !== requestIndex) return;
-    russianTextElement.textContent = 'Translation unavailable';
+    russianTextElement.textContent = window.I18n.t("translation.unavailable");
     statusElement.textContent = error.message;
   }
 }
@@ -163,7 +161,7 @@ function setRunning(nextRunning) {
   if (nextRunning === isRunning) return;
 
   isRunning = nextRunning;
-  playPauseButton.textContent = isRunning || isOcrRunning ? 'Stop' : 'Start';
+  updateControls();
 
   if (isRunning) {
     startedAt = performance.now() - pausedAt;
@@ -201,7 +199,7 @@ function setCachedTranslation(normalizedKey, translation) {
   try { storage.setItem('ocr-norm-' + normalizedKey, translation); } catch (_) {}
 }
 
-function stopOcr(message = 'Screen OCR stopped') {
+function stopOcr(message = window.I18n.t("screen.ocr.stopped")) {
   screenOcrCoordinator.stop(message);
 }
 
@@ -210,6 +208,18 @@ const mainPanelOutput = new MainPanelOutput({
   russianTextElement,
   statusElement
 });
+for (const method of ['showRecognizedText','showTranslation','showTranslationPending','clear']) {
+  const original=mainPanelOutput[method].bind(mainPanelOutput);
+  mainPanelOutput[method]=(...args)=>{ original(...args); updateControls(); };
+}
+mainPanelOutput.showTranslationError=message=>notify(message || window.I18n.t('translation.failed'));
+const rawStatus=mainPanelOutput.setStatus.bind(mainPanelOutput);
+mainPanelOutput.setStatus=message=>{
+  const text=String(message || '');
+  if(/error|failed/i.test(text)) { notify(text); return; }
+  const key=/translat.*(detected|queued)|translating|growing/.test(text)?'translating':/translated/.test(text)?'translation.updated':/no subtitle|noise|same|similar|scanning/i.test(text)?'watching.for.subtitles':null;
+  rawStatus(key?window.I18n.t(key):text);
+};
 
 const nearSourceOutput = new NearSourceOutput({
   showOverlay: (payload) => window.overlayApi.showNearSourceOverlay(payload),
@@ -229,7 +239,7 @@ const screenOcrCoordinator = new ScreenOcrCoordinator({
   onRunningChange: (running) => {
     if (running) setRunning(false);
     isOcrRunning = running;
-    playPauseButton.textContent = isOcrRunning || isRunning ? 'Stop' : 'Start';
+    updateControls();
   },
   getCachedTranslation,
   setCachedTranslation,
@@ -243,24 +253,27 @@ const screenOcrCoordinator = new ScreenOcrCoordinator({
 });
 
 playPauseButton.addEventListener('click', () => {
-  if (isGameMode) return;
-  if (isOcrRunning) screenOcrCoordinator.stop('');
-  else screenOcrCoordinator.start();
+  if (capturePending || editing) return;
+  if (!hasOcrArea) { chooseArea(); return; }
+  if (isGameMode) { resumeSubtitles().catch(error=>notify(error.message)); return; }
+  if (isOcrRunning) screenOcrCoordinator.stop(window.I18n.t("stopped"));
+  else { notify(''); screenOcrCoordinator.start(); }
 });
-ocrOnceButton.addEventListener('click', () => { if (!isGameMode) screenOcrCoordinator.readOnce(); });
+ocrOnceButton.addEventListener('click', () => { if (!isGameMode && !editing && !capturePending) { if (!hasOcrArea) chooseArea(); else screenOcrCoordinator.readOnce(); } });
 addWordButton.addEventListener('click', addSelectedWord);
 dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDictionaryWindow());
 settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
-  if (key === 'displayMode') outputRouter.setDisplayMode(value);
+  if (key === 'font') window.Appearance.apply({font:value});
+  if (key === 'displayMode') { outputRouter.setDisplayMode(value); document.getElementById('overlayNotice').hidden = value !== 'overlay'; }
   if (key === 'developerMode') setDeveloperMode(value === true);
   if (key.startsWith('nearSource')) nearSourceOutput.setSettings({ [key]: value });
   if (key === 'fontScale') {
     document.documentElement.style.setProperty('--font-scale', `${Number(value) / 100}`);
   }
   if (key === 'theme') {
-    panel.dataset.theme = value;
+    window.Themes.apply(document, value); panel.dataset.theme = window.Themes.normalizeId(value);
     storage.setItem('subtitle-overlay-theme', value);
   }
   if (key === 'font') {
@@ -272,11 +285,13 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 });
 
 window.overlayApi.onApplyUiSettings((settings) => {
+  window.Appearance.apply(settings);
+  document.getElementById('overlayNotice').hidden=settings.displayMode!=='overlay';
   outputRouter.setDisplayMode(settings.displayMode);
   setDeveloperMode(settings.developerMode === true);
   nearSourceOutput.setSettings(settings);
   if (settings.fontScale) document.documentElement.style.setProperty('--font-scale', `${Number(settings.fontScale) / 100}`);
-  if (settings.theme) { panel.dataset.theme = settings.theme; storage.setItem('subtitle-overlay-theme', settings.theme); }
+  if (settings.theme) { window.Themes.apply(document, settings.theme); panel.dataset.theme = window.Themes.normalizeId(settings.theme); storage.setItem('subtitle-overlay-theme', settings.theme); }
   if (settings.font) applyFont(settings.font);
   if (typeof settings.deleteConfirm !== 'undefined') storage.setItem('subtitle-confirm-delete', settings.deleteConfirm);
   if (settings.windowWidth && settings.windowHeight) {
@@ -286,25 +301,26 @@ window.overlayApi.onApplyUiSettings((settings) => {
 
 function applyFont(font) {
   const fonts = {
-    system: 'Inter, Segoe UI, Arial, sans-serif',
-    inter: 'Inter, sans-serif',
+    system: window.I18n.t("inter.segoe.ui.arial.sans.serif"),
+    inter: window.I18n.t("inter.sans.serif"),
     'segoe ui': '"Segoe UI", sans-serif',
-    arial: 'Arial, sans-serif',
-    consolas: 'Consolas, "Courier New", monospace',
+    arial: window.I18n.t("arial.sans.serif"),
+    consolas: window.I18n.t("consolas.courier.new.monospace"),
     'jetbrains mono': '"JetBrains Mono", Consolas, monospace',
-    'dot matrix': 'Consolas, "Courier New", monospace'
+    'dot matrix': window.I18n.t("consolas.courier.new.monospace")
   };
   document.body.style.fontFamily = fonts[font] || fonts.system;
   storage.setItem('subtitle-overlay-font', font);
 }
 
-panel.dataset.theme = 'green';
+panel.dataset.theme = 'dark';
 applyFont('system');
 
 async function loadInitSettings() {
   try {
-    const s = await window.overlayApi.getUiSettings();
-    panel.dataset.theme = s.theme || 'green';
+    const s = await window.uiReady;
+    window.Themes.apply(document, s.theme); panel.dataset.theme = window.Themes.normalizeId(s.theme);
+    document.getElementById('overlayNotice').hidden = s.displayMode !== 'overlay';
     storage.setItem('subtitle-overlay-theme', panel.dataset.theme);
     applyFont(s.font || 'system');
     document.documentElement.style.setProperty('--font-scale', `${(s.fontScale || 100) / 100}`);
@@ -319,97 +335,104 @@ async function loadInitSettings() {
 }
 loadInitSettings();
 
+const actionStatus = document.getElementById('actionStatus');
+const captureButton = document.getElementById('captureTranslate');
 const retranslateButton = document.getElementById('retranslateButton');
+let isGameMode = false, manualTranslationRequestId = 0, capturePending = false, editing = false, resumeAfterManual = false;
+let snapshot = null, editSnapshot = null, selectedWord = '';
+function notify(message) { actionStatus.hidden = !message; actionStatus.textContent = message; actionStatus.classList.toggle('notice',/failed|could not|unavailable|busy/i.test(message)); }
+function updateControls() {
+  document.getElementById('emptyResult').hidden = Boolean(russianTextElement.textContent.trim());
+  playPauseButton.disabled = capturePending || editing;
+  playPauseButton.textContent = isOcrRunning ? window.I18n.t("stop.translation") : isGameMode && resumeAfterManual ? window.I18n.t("continue.subtitles") : hasOcrArea ? window.I18n.t("start.translation") : window.I18n.t("choose.subtitle.area");
+  captureButton.disabled = capturePending || editing;
+  document.getElementById('copyTranslation').disabled = !englishTextElement.textContent.trim();
+  document.getElementById('welcome').hidden = hasOcrArea || isGameMode;
+  document.getElementById('resumeTranslation').hidden = !resumeAfterManual || capturePending || editing;
+  document.getElementById('editOriginal').hidden = editing;
+  document.getElementById('editOriginal').disabled = capturePending || !englishTextElement.textContent.trim();
+  retranslateButton.hidden = !editing;
+  document.getElementById('cancelEdit').hidden = !editing;
+  ocrOnceButton.disabled = capturePending || editing || isGameMode;
+  document.getElementById('selectOcrArea').disabled = capturePending || editing;
+}
+async function chooseArea() { try { await window.overlayApi.selectOcrArea(); } catch(error) { notify(window.I18n.t("could.not.select.area")+error.message); } }
+async function resumeSubtitles() {
+  manualTranslationRequestId++;
+  await window.overlayApi.setGameModeEnabled(false);
+  isGameMode = false; resumeAfterManual = false; outputRouter.setGameMode(false);
+  if (hasOcrArea) screenOcrCoordinator.start(); else chooseArea();
+  updateControls();
+}
+async function beginCapture() {
+  if (capturePending || editing) return;
+  snapshot = { english:englishTextElement.textContent, russian:russianTextElement.textContent, running:isOcrRunning, manual:isGameMode, resume:resumeAfterManual };
+  resumeAfterManual = resumeAfterManual || isOcrRunning;
+  screenOcrCoordinator.stop(window.I18n.t("select.an.area.escape.cancels"));
+  manualTranslationRequestId++; capturePending = true; isGameMode = true; outputRouter.setGameMode(true); updateControls();
+  try { if (!await window.overlayApi.startCaptureTranslate()) throw new Error(window.I18n.t("capture.is.busy.try.again")); }
+  catch(error) { await cancelCapture(); notify(error.message); }
+}
+async function cancelCapture() {
+  capturePending = false; manualTranslationRequestId++;
+  if(snapshot) { englishTextElement.textContent=snapshot.english; russianTextElement.textContent=snapshot.russian; isGameMode=snapshot.manual; resumeAfterManual=snapshot.resume; await window.overlayApi.setGameModeEnabled(isGameMode); outputRouter.setGameMode(isGameMode); if(snapshot.running) screenOcrCoordinator.start(); else statusElement.textContent=window.I18n.t("ready"); }
+  updateControls();
+}
+captureButton.addEventListener('click', beginCapture);
+window.overlayApi.onCaptureRequested(beginCapture);
+window.overlayApi.onCaptureResult(async data => {
+  if (!capturePending || !data) return;
+  if (data.cancelled) { await cancelCapture(); return; }
+  capturePending = false; manualTranslationRequestId++;
+  if (data.error) notify(window.I18n.t("could.not.translate.this.area")+data.error);
+  else if (!data.original) notify(window.I18n.t("no.text.found.try.selecting.a.larger.area"));
+  else { englishTextElement.textContent = data.original; russianTextElement.textContent = data.translation || ''; notify(''); }
+  statusElement.textContent = resumeAfterManual ? window.I18n.t("subtitles.paused.while.you.view.this.result") : window.I18n.t("ready");
+  updateControls();
+});
+document.getElementById('selectOcrArea').addEventListener('click', chooseArea);
+document.getElementById('resumeTranslation').addEventListener('click', () => resumeSubtitles().catch(error=>notify(error.message)));
+document.getElementById('editOriginal').addEventListener('click', () => {
+  if(!englishTextElement.textContent.trim()) return;
+  editSnapshot = { english:englishTextElement.textContent, russian:russianTextElement.textContent, running:isOcrRunning, manual:isGameMode, resume:resumeAfterManual };
+  resumeAfterManual ||= isOcrRunning; screenOcrCoordinator.stop(window.I18n.t("editing.original.text")); manualTranslationRequestId++; editing = true;
+  document.getElementById('originalDetails').open = true; englishTextElement.contentEditable='true'; englishTextElement.setAttribute('aria-readonly','false'); updateControls(); englishTextElement.focus();
+});
+function finishEditing() { editing=false; englishTextElement.contentEditable='false'; englishTextElement.setAttribute('aria-readonly','true'); updateControls(); document.getElementById('editOriginal').focus(); }
+document.getElementById('cancelEdit').addEventListener('click', () => {
+  manualTranslationRequestId++; englishTextElement.textContent=editSnapshot.english; russianTextElement.textContent=editSnapshot.russian; resumeAfterManual=editSnapshot.resume; isGameMode=editSnapshot.manual; finishEditing(); if(editSnapshot.running) screenOcrCoordinator.start();
+});
 retranslateButton.addEventListener('click', async () => {
-  const editedText = englishTextElement.textContent.trim();
-  if (!editedText) return;
-  const requestId = ++manualTranslationRequestId;
-  statusElement.textContent = 'Translating...';
-  try {
-    const translation = await window.overlayApi.translate(editedText, 'manual');
-    if (requestId !== manualTranslationRequestId || englishTextElement.textContent.trim() !== editedText) return;
-    russianTextElement.textContent = translation;
-    statusElement.textContent = 'Translation updated';
-  } catch (_) {
-    if (requestId !== manualTranslationRequestId) return;
-    statusElement.textContent = 'Translation failed';
-  }
+  const editedText = englishTextElement.textContent.trim(); if(!editedText) { notify(window.I18n.t("enter.some.text.to.translate")); return; }
+  const requestId=++manualTranslationRequestId; retranslateButton.disabled=true; notify(window.I18n.t("translating.changes"));
+  try { const result=await window.overlayApi.translate(editedText,'manual'); if(requestId!==manualTranslationRequestId || !editing || englishTextElement.textContent.trim()!==editedText) return; russianTextElement.textContent=result; isGameMode=true; outputRouter.setGameMode(true); finishEditing(); notify(window.I18n.t("translation.updated")); }
+  catch(error) { if(requestId===manualTranslationRequestId) notify(window.I18n.t("translation.failed.you.can.retry.without.losing.your.edits")); }
+  finally { retranslateButton.disabled=false; }
 });
-
-focusToggleButton.addEventListener('click', () => {
-  panel.classList.toggle('focusMode');
-  focusToggleButton.textContent = panel.classList.contains('focusMode') ? 'Exit focus' : 'Focus mode';
-});
-
-let isGameMode = false;
-let manualTranslationRequestId = 0;
-gameModeToggleButton.addEventListener('click', async () => {
-  if (gameModeToggleButton.disabled) return;
-  gameModeToggleButton.disabled = true;
-  isGameMode = !isGameMode;
-  manualTranslationRequestId += 1;
-  gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
-  gameModeToggleButton.classList.toggle('primary', isGameMode);
-  try { await window.overlayApi.setGameModeEnabled(isGameMode); } catch (error) {
-    isGameMode = !isGameMode;
-    gameModeToggleButton.textContent = isGameMode ? 'Close game' : 'Game mode';
-    gameModeToggleButton.classList.toggle('primary', isGameMode);
-    statusElement.textContent = error.message; gameModeToggleButton.disabled = false; return;
-  }
-  gameModeToggleButton.disabled = false;
-  playPauseButton.disabled = isGameMode;
-  ocrOnceButton.disabled = isGameMode;
-  if (isGameMode) {
-    outputRouter.setGameMode(true);
-    stopOcr('Screen OCR stopped for Game mode');
-  } else {
-    outputRouter.setGameMode(false);
-  }
-  englishTextElement.contentEditable = isGameMode ? 'true' : 'false';
-  retranslateButton.hidden = !isGameMode;
-  if (isGameMode) {
-    statusElement.textContent = 'Game OCR: Press Ctrl+Shift+T to translate screen';
-    englishTextElement.textContent = 'Select area with Ctrl+Shift+T';
-    russianTextElement.textContent = 'Translation will appear here';
-  } else {
-    statusElement.textContent = '';
-    englishTextElement.contentEditable = 'false';
-    retranslateButton.hidden = true;
-  }
-});
-
-window.overlayApi.onCaptureResult((data) => {
-  if (!isGameMode || !data) return;
-  if (data.error) { statusElement.textContent = data.error; return; }
-  manualTranslationRequestId += 1;
-  englishTextElement.textContent = data.original || 'No English text found';
-  russianTextElement.textContent = data.translation || '-';
-  retranslateButton.hidden = false;
-});
-
-window.overlayApi.onGameModeDisabled(() => {
-  statusElement.textContent = 'Enable Game mode first';
-});
-
-window.overlayApi.onWindowRestored(() => {
-  statusElement.textContent = 'Window restored. Controls are clickable.';
-});
-
-window.overlayApi.onStopOcr(() => stopOcr('Screen OCR stopped by Ctrl+Shift+S'));
+document.addEventListener('selectionchange', () => { const sel=window.getSelection(); const inResult=sel?.anchorNode && document.querySelector('.subtitleBox').contains(sel.anchorNode); selectedWord=inResult ? cleanSelectedWord(sel.toString()) : ''; addWordButton.hidden=!selectedWord; if(selectedWord && isOcrRunning) { resumeAfterManual=true; screenOcrCoordinator.stop(window.I18n.t("subtitles.paused.while.you.select.text")); isGameMode=true; outputRouter.setGameMode(true); updateControls(); } });
+addWordButton.addEventListener('mousedown', event=>event.preventDefault());
+document.getElementById('copyTranslation').addEventListener('click', async () => { try { await navigator.clipboard.writeText(russianTextElement.textContent); notify(window.I18n.t("translation.copied")); } catch(error) { notify(window.I18n.t("could.not.copy.select.the.text.and.press.ctrl.c")); } });
+document.getElementById('minimizeWindow').addEventListener('click',()=>window.overlayApi.minimizeWindow());
+document.getElementById('closeWindow').addEventListener('click',()=>window.overlayApi.quitApp());
+document.getElementById('restoreSize').addEventListener('click',()=>window.overlayApi.restoreWindowSize().catch(error=>notify(error.message)));
+window.overlayApi.onWindowRestored(() => { updateControls(); });
+window.overlayApi.onStopOcr(() => { resumeAfterManual=false; screenOcrCoordinator.stop(window.I18n.t("subtitles.stopped")); updateControls(); });
+updateControls();
 
 let activeOcrProgressRequest = null;
 let developerModeEnabled = false;
 function setDeveloperMode(enabled) {
   developerModeEnabled = enabled;
+  statusElement.hidden = !enabled;
   document.dispatchEvent(new CustomEvent('developer-mode-changed', { detail: { enabled } }));
 }
 window.overlayApi.onOcrProgress((event) => {
-  if (typeof event === 'number') { if (isOcrRunning) statusElement.textContent = `Screen OCR: recognizing ${event}%`; return; }
+  if (typeof event === 'number') { if (isOcrRunning) statusElement.textContent = window.I18n.t('reading.subtitles'); return; }
   if (event?.type === 'started') activeOcrProgressRequest = `${event.generation}:${event.requestId}`;
-  if (event?.type === 'progress' && activeOcrProgressRequest === `${event.generation}:${event.requestId}` && isOcrRunning) statusElement.textContent = developerModeEnabled ? `OCR: recognizing ${event.progress}%` : `Screen OCR: recognizing ${event.progress}%`;
+  if (event?.type === 'progress' && activeOcrProgressRequest === `${event.generation}:${event.requestId}` && isOcrRunning) statusElement.textContent = window.I18n.t('reading.subtitles');
   if (event?.type === 'reset' && activeOcrProgressRequest === `${event.generation}:${event.requestId}`) {
     activeOcrProgressRequest = null;
-    if (isOcrRunning) statusElement.textContent = 'Screen OCR: running';
+    if (isOcrRunning) statusElement.textContent = window.I18n.t("watching.for.subtitles");
   }
 });
 
@@ -417,6 +440,10 @@ window.overlayApi.onOcrAreaChanged((area) => {
   const wasRunning = isOcrRunning;
   screenOcrCoordinator.stop('');
   hasOcrArea = Boolean(area && Number.isFinite(area.width) && Number.isFinite(area.height) && area.width > 0 && area.height > 0);
-  statusElement.textContent = hasOcrArea ? `OCR area selected: ${Math.round(area.width)}x${Math.round(area.height)}` : 'Select OCR area first';
+  document.getElementById('areaStatus').textContent = hasOcrArea ? window.I18n.t("subtitle.area.selected") : window.I18n.t("no.subtitle.area.selected");
+  statusElement.textContent = hasOcrArea ? window.I18n.t("ready.to.translate") : window.I18n.t("choose.a.subtitle.area.to.begin");
+  updateControls();
   if (wasRunning && hasOcrArea && !isGameMode) screenOcrCoordinator.start();
 });
+
+document.addEventListener('keydown',event=>{if(event.key==='Escape' && editing){event.preventDefault();document.getElementById('cancelEdit').click();}});

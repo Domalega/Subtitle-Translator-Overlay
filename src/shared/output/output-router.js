@@ -40,25 +40,25 @@
 
     showRecognizedText(text) {
       this.lastRecognizedText = typeof text === 'string' ? text : '';
-      if (this.shouldUsePanel()) this.mainOutput.showRecognizedText(text);
+      this.mainOutput.showRecognizedText(text);
       if (this.shouldUseOverlay()) this.nearSourceOutput.showRecognizedText(text);
     }
 
     showTranslationPending(sourceText) {
-      if (this.shouldUsePanel()) this.mainOutput.showTranslationPending(sourceText);
+      this.mainOutput.showTranslationPending(sourceText);
       if (this.shouldUseOverlay()) this.nearSourceOutput.showTranslationPending(sourceText);
     }
 
     showTranslation(translatedText, sourceText) {
       if (typeof sourceText === 'string') this.lastRecognizedText = sourceText;
       if (typeof translatedText === 'string' && translatedText.trim()) { this.lastTranslation = translatedText; this.lastTranslationSource = sourceText || this.lastRecognizedText; this.overlayVisible = true; }
-      if (this.shouldUsePanel()) this.mainOutput.showTranslation(translatedText, sourceText);
+      this.mainOutput.showTranslation(translatedText, sourceText);
       if (this.shouldUseOverlay()) this.nearSourceOutput.showTranslation(translatedText, sourceText || this.lastRecognizedText);
       if (typeof process !== 'undefined' && process.env?.OCR_DEBUG === '1') console.debug('[OCR] output routed', { panel: this.shouldUsePanel(), overlay: this.shouldUseOverlay(), textLength: String(translatedText || '').length });
     }
 
     showTranslationError(error) {
-      if (this.shouldUsePanel()) this.mainOutput.showTranslationError(error);
+      this.mainOutput.showTranslationError(error);
       if (this.shouldUseOverlay()) this.nearSourceOutput.showTranslationError(error);
     }
 

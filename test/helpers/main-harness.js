@@ -53,6 +53,7 @@ function mainHarness(t, options = {}) {
     hide() { this.visible = false; }
     close() { this.destroyed = true; this.visible = false; this.emit('closed'); }
     focus() {}
+    minimize() { this.visible = false; }
     isMinimized() { return false; }
     restore() {}
     setAlwaysOnTop() {}

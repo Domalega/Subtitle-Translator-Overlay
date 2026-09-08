@@ -1,10 +1,11 @@
 (function initSettingsStore(root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' && module.exports ? require('./themes') : root.Themes);
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.SettingsStore = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function createSettingsStore() {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function createSettingsStore(Themes) {
   const DEFAULT_UI_SETTINGS = Object.freeze({
-    theme: 'green',
+    theme: 'dark',
+    locale: 'en',
     fontScale: 100,
     windowWidth: 980,
     windowHeight: 360,
@@ -22,7 +23,6 @@
     developerMode: false
   });
 
-  const THEMES = new Set(['green', 'blue', 'purple', 'dark', 'nothing', 'nothing-dark', 'nothing-os-light', 'nothing-os-dark']);
   const FONTS = new Set(['system', 'inter', 'segoe ui', 'arial', 'consolas', 'jetbrains mono', 'dot matrix']);
 
   function clampNumber(value, fallback, min, max) {
@@ -36,7 +36,8 @@
     const source = savedSettings && typeof savedSettings === 'object' && !Array.isArray(savedSettings) ? savedSettings : {};
     const merged = { ...source };
 
-    merged.theme = THEMES.has(source.theme) ? source.theme : DEFAULT_UI_SETTINGS.theme;
+    merged.theme = Themes.normalizeId(source.theme);
+    merged.locale = 'en';
     merged.font = FONTS.has(source.font) ? source.font : DEFAULT_UI_SETTINGS.font;
     merged.fontScale = clampNumber(source.fontScale, DEFAULT_UI_SETTINGS.fontScale, 70, 150);
     merged.windowWidth = clampNumber(source.windowWidth, DEFAULT_UI_SETTINGS.windowWidth, 620, 1500);

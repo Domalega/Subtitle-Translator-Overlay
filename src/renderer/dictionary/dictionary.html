@@ -1,110 +1,140 @@
-<!doctype html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dictionary</title>
-    <link rel="stylesheet" href="../shared/tool-window.css" />
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="dictionary">Dictionary</title>
+    <link rel="stylesheet" href="../shared/ui.css">
+    <link rel="stylesheet" href="../shared/tool-window.css">
   </head>
   <body>
     <main class="toolWindow">
       <header class="toolTitlebar">
         <div>
-          <strong>Dictionary</strong>
-          <span>Words added from subtitles</span>
+          <strong data-i18n="dictionary">Dictionary</strong>
+          <span data-i18n="your.saved.words.and.translations">Your saved words and translations</span>
         </div>
-        <button id="closeWindow" class="windowButton">Close</button>
+        <button id="closeWindow" class="windowButton" data-i18n="close">Close</button>
       </header>
 
-      <section class="card slimCard splitHeader">
-        <strong>Saved words</strong>
-        <label class="sortControl">
-          Sort
-          <select id="dictionarySort">
-            <option value="date-desc">Newest</option>
-            <option value="date-asc">Oldest</option>
-            <option value="alpha-asc">A-Z</option>
-            <option value="alpha-desc">Z-A</option>
-          </select>
-        </label>
-      </section>
+<section class="dictionaryToolbar">
+<input id="dictionarySearch" type="search" aria-label="Search dictionary" placeholder="Search words or translations" data-i18n-placeholder="search.words.or.translations" data-i18n-aria-label="search.dictionary">
+<label class="sortControl">
+<span data-i18n="sort">Sort</span>
+<select id="dictionarySort">
+<option value="date-desc" data-i18n="newest">Newest</option>
+<option value="date-asc" data-i18n="oldest">Oldest</option>
+<option value="alpha-asc" data-i18n="a.z">A–Z</option>
+<option value="alpha-desc" data-i18n="z.a">Z–A</option>
+</select>
+</label>
+<details class="menu">
+<summary data-i18n="more">More</summary>
+<div>
+<button id="studyButton" data-i18n="review.words">Review words</button>
+<button id="exportButton" data-i18n="export.dictionary">Export dictionary</button>
+</div>
+</details>
+</section>
+      <section id="dictionaryList" class="dictionaryList">
+</section>
 
-      <section class="searchBar">
-        <input id="dictionarySearch" type="search" placeholder="Search words, translations, dates..." />
-        <button id="studyButton">Study</button>
-        <button id="exportButton">Export</button>
-      </section>
-
-      <section id="dictionaryList" class="dictionaryList"></section>
-
-      <footer class="pager">
-        <button id="dictionaryPrev">Prev</button>
-        <span id="dictionaryPageInfo">Page 1 / 1</span>
-        <button id="dictionaryNext">Next</button>
+      <div id="dictionaryStatus" class="status settingsStatus" role="status" hidden="">
+</div>
+<footer class="pager">
+        <button id="dictionaryPrev" data-i18n="prev">Prev</button>
+        <span id="dictionaryPageInfo" data-i18n="page.1.1">Page 1 / 1</span>
+        <button id="dictionaryNext" data-i18n="next">Next</button>
       </footer>
 
-      <div id="contextModal" class="modal">
+      <div id="contextModal" class="modal" role="dialog" aria-modal="true">
         <div class="modalContent">
           <div class="modalHeader">
-            <h2>Word Context</h2>
-            <button id="closeContextModal" class="windowButton">Close</button>
+            <h2 data-i18n="word.context">Word Context</h2>
+            <button id="closeContextModal" class="windowButton" data-i18n="close">Close</button>
           </div>
-          <div id="contextContent" class="modalBody"></div>
+          <div id="contextContent" class="modalBody">
+</div>
         </div>
       </div>
 
-      <div id="deleteConfirmModal" class="modal">
+      <div id="deleteConfirmModal" class="modal" role="dialog" aria-modal="true">
         <div class="modalContent">
           <div class="modalHeader">
-            <h2>Confirm Deletion</h2>
-            <button id="closeDeleteConfirmModal" class="windowButton">Cancel</button>
+            <h2 data-i18n="confirm.deletion">Confirm Deletion</h2>
+            <button id="closeDeleteConfirmModal" class="windowButton" data-i18n="cancel">Cancel</button>
           </div>
           <div class="modalBody">
-            <p>Are you sure you want to delete the word "<span id="wordToDelete"></span>"?</p>
+<p id="deleteStatus" class="notice" role="alert" hidden="">
+</p>
+            <p>
+<span id="wordToDelete">
+</span>
+</p>
             <div class="modalFooter">
-              <button id="cancelDelete" class="windowButton">Cancel</button>
-              <button id="confirmDelete" class="windowButton deleteButton">Delete</button>
+              <button id="cancelDelete" class="windowButton" data-i18n="cancel">Cancel</button>
+              <button id="confirmDelete" class="windowButton deleteButton" data-i18n="delete">Delete</button>
             </div>
           </div>
         </div>
       </div>
 
-      <div id="studyModal" class="modal">
+      <div id="studyModal" class="modal" role="dialog" aria-modal="true">
         <div class="modalContent">
           <div class="modalHeader">
-            <h2>Study Mode</h2>
-            <button id="closeStudyModal" class="windowButton">Close</button>
+            <h2 data-i18n="review.words">Review words</h2>
+            <button id="closeStudyModal" class="windowButton" data-i18n="close">Close</button>
           </div>
           <div class="modalBody" style="text-align:center">
-            <div class="studyWord" id="studyWord"></div>
-            <div class="studyTranslation" id="studyTranslation"></div>
+            <p id="studyProgress" class="hint">
+</p>
+<div class="studyWord" id="studyWord">
+</div>
+            <div class="studyTranslation" id="studyTranslation">
+</div>
             <div class="studyControls">
-              <button id="showTranslationBtn">Show translation</button>
-              <button id="studyEasyBtn">Easy</button>
-              <button id="studyHardBtn">Hard</button>
-              <button id="studyNextBtn" class="primary">Next</button>
+              <button id="showTranslationBtn" data-i18n="show.translation">Show translation</button>
+
+
+              <button id="studyNextBtn" class="primary" data-i18n="next">Next</button>
             </div>
           </div>
         </div>
       </div>
 
-      <div id="exportModal" class="modal">
+      <div id="exportModal" class="modal" role="dialog" aria-modal="true">
         <div class="modalContent">
           <div class="modalHeader">
-            <h2>Export Dictionary</h2>
-            <button id="closeExportModal" class="windowButton">Close</button>
+            <h2 data-i18n="export.dictionary.2">Export Dictionary</h2>
+            <button id="closeExportModal" class="windowButton" data-i18n="close">Close</button>
           </div>
           <div class="modalBody" style="text-align:center">
-            <p style="margin-bottom:16px">Choose export format:</p>
+            <p id="exportStatus" class="notice" role="alert" hidden="">
+</p>
+<p style="margin-bottom:16px" data-i18n="choose.export.format">Choose export format:</p>
             <div style="display:flex;gap:10px;justify-content:center">
-              <button id="exportCsvBtn" class="primary">Export CSV</button>
-              <button id="exportJsonBtn" class="primary">Export JSON</button>
+              <button id="exportCsvBtn" class="primary" data-i18n="export.csv">Export CSV</button>
+              <button id="exportJsonBtn" class="primary" data-i18n="export.json">Export JSON</button>
             </div>
           </div>
         </div>
       </div>
     </main>
-    <script src="../../shared/utils/dictionary-pagination.js"></script>
-    <script src="dictionary.js"></script>
-  </body>
+    <script src="../../shared/ui/locales/en.js">
+</script>
+<script src="../../shared/ui/i18n.js">
+</script>
+<script src="../shared/localize.js">
+</script>
+<script src="../../shared/settings/themes.js">
+</script>
+<script src="../shared/ui.js">
+</script>
+<script src="../../shared/utils/dictionary-pagination.js">
+</script>
+    <script src="dictionary.js">
+</script>
+
+
+</body>
 </html>

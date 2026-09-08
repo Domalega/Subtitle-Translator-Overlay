@@ -6,48 +6,44 @@ Current package version: **0.2.2**. OCR uses the bundled English model locally; 
 
 ## Features
 
-### Screen OCR
-- Select an OCR area from `Settings` with `Select OCR area`.
-- Use `Read once` to read the selected area one time.
-- Use `Start` / `Stop` to check the selected area continuously every 200 ms; unchanged frames are skipped with periodic forced refreshes.
-- Shows recognized English text in the left column and Russian translation in the right column.
-- Translation results are cached in the main process to reduce repeated translation requests.
+### Translate subtitles
+- Choose the original English subtitle area directly from the main window, then select **Start translation**.
+- The application checks for changed frames every 200 ms and translates accepted text into Russian.
+- **Stop translation** pauses scanning. **Change area** replaces the persistent subtitle region.
+- **More → Read subtitle area once** performs one read of the saved region.
 
-### Display Modes
-- `Main panel` is the default mode and shows original and translation in the application window.
-- `Near original subtitles` is optional and shows only the translation next to the selected original subtitle area.
-- Select an OCR area before using near-source mode. Auto prefers below the original subtitles and falls back above; Below and Above can be selected explicitly.
-- The near-source overlay is transparent, does not capture mouse input, and is intended for the primary monitor.
+### Translate any screen area
+- Select **Translate an area**, or press the configured shortcut (Ctrl+Shift+T by default).
+- No Game mode needs to be enabled. Drag to select text on the primary display; Escape cancels.
+- Continuous subtitles pause for a capture. Cancellation restores the previous session; a successful result remains until **Continue subtitles** is selected.
+- **Edit original** lets you correct recognized text. **Translate changes** updates the result; **Cancel editing** or Escape restores the previous text.
 
-### Editing And Translation
-- In `Game mode`, the recognized original text can be edited in the main window.
-- Use `Retranslate edited` to translate the edited text again.
-- Translation uses the Google Translate endpoint used by the application code.
+### Reading and display
+- Translation is the main content; **Original · English** expands the source text.
+- **Settings → Display** selects **In the window**, **Over the video**, or **In both places**. The full result remains available in the main window even when subtitles are shown over video.
+- The video overlay passes mouse clicks through to the underlying application. Its size, opacity and placement have a preview in Display settings.
+- Long results scroll in the main window. Overlay line limits may truncate the on-video presentation.
+- The capture shortcut is shown only in Translation settings. The bottom translation status is visible only when developer mode is enabled; actionable errors remain visible.
+- The main window has minimize and quit controls. Drag the title bar or resize the window normally; size is saved. **More → Restore window size** restores size and position.
 
 ### Dictionary
-- Select a word in the overlay and press `Add word` to add it to the personal dictionary.
-- Open the dictionary with `Dictionary`.
-- Dictionary supports search, sorting, pagination, word deletion, context examples, and export to CSV or JSON.
-- `Study` opens the available flashcard-style study mode.
+- Select text in the result and choose **Add selected word**. Selecting text pauses an active subtitle session so the selection stays stable.
+- **More → Dictionary** opens search, sorting, pronunciation, context examples, deletion and export to CSV or JSON.
+- Pages contain up to 20 entries and scroll to accommodate long words or translations.
+- **More → Review words** offers one pass through all saved words, with a progress indicator and completion state.
 
-### Appearance And UI
-- `Settings` supports theme, font, text scale, main window width, and main window height.
-- `Confirm before deleting words` controls dictionary delete confirmation.
-- `Context examples count` controls how many context examples are requested.
-- `Focus mode` hides non-essential controls in the main overlay.
-- `Developer mode` shows the selected OCR area and the current OCR processing stage for diagnostics.
-
-### Game Mode
-- Enable `Game mode` in the main window.
-- Press the configured hotkey, `Ctrl+Shift+T` by default, to select a screen area and translate it.
-- Game mode results are shown in the main overlay window.
-- Game mode does not use the near-source overlay.
-- The Game mode hotkey can be changed in `Settings`.
+### Settings and appearance
+- Settings are grouped into Translation, Display, Appearance, Dictionary and Advanced.
+- Exactly two built-in themes are available: **Dark** and **Light**. Older themes migrate to one of these; no Nothing themes remain selectable or styled.
+- The interface ships in English only. English messages live in a separate catalog with a locale registration and fallback mechanism for future translations.
+- Theme definitions use a shared semantic token registry, allowing future themes without changes to individual window layouts. A custom-theme editor is not included.
+- **Advanced** contains diagnostics and a confirmed settings reset. Reset preserves the dictionary and subtitle area.
+- See [UI architecture](docs/ui-design.md) for extension points and interaction rules.
 
 ### Hotkeys
-- `Ctrl+Shift+O`: restore the main window.
-- `Ctrl+Shift+S`: stop continuous Screen OCR.
-- `Ctrl+Shift+T`: default Game mode capture hotkey, configurable in `Settings`.
+- **Ctrl+Shift+O**: restore the main window.
+- **Ctrl+Shift+S**: stop continuous subtitle translation.
+- **Ctrl+Shift+T**: translate an area, configurable by pressing a new combination in **Settings → Translation**.
 
 ## Installation
 
@@ -87,35 +83,18 @@ The retired translation window is no longer part of the application.
 
 ## Usage
 
-### Continuous Screen OCR
-1. Open `Settings`.
-2. Click `Select OCR area` and drag over the original English subtitle/text area.
-3. Click `Read once` for a single OCR pass, or `Start` for continuous scanning.
-4. Click `Stop` to stop continuous scanning.
-
-### Near Original Subtitles
-1. Select the OCR area in `Settings`.
-2. In `Settings`, select `Near original subtitles` under `Display mode`.
-3. Start Screen OCR. A successful translation appears beside the original subtitle without taking mouse input.
-
-### Game Mode Capture
-1. Enable `Game mode` in the main window.
-2. Press `Ctrl+Shift+T` or your configured hotkey.
-3. Drag to select the screen area to translate.
-4. The recognized original and translation appear in the main overlay window.
-
-### Dictionary
-1. Select a word in the recognized or translated text.
-2. Click `Add word`.
-3. Open `Dictionary` to search, sort, page through entries, export them, or use `Study`.
+1. Launch with `npm start` or `Start Subtitle Overlay.cmd`.
+2. Select **Choose subtitle area**, then drag around the original English subtitles.
+3. Select **Start translation**. Choose **Translate an area** whenever you need a one-off result.
+4. Adjust **Settings → Display** to place subtitles over the video; use **Appearance** for Light or Dark.
+5. Use **Stop translation** to stop scanning and the title-bar quit button to close the application.
 
 ## Known Limitations
 
 - OCR works only after an OCR area has been selected.
 - The current version is oriented around the primary monitor.
 - OCR quality depends on subtitle/text size, color, contrast, and background.
-- Game mode currently works through the configured hotkey.
-- Live Scan for Game OCR is not currently available in the UI.
+- UI changes have automated Electron coverage; real game/video playback and physical Windows DPI behavior still require manual acceptance.
 - SRT loading exists in code but is not available from the current interface.
 
 ## Development

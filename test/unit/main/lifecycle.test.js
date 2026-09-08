@@ -41,7 +41,7 @@ test('selection and tool windows can close and reopen without losing their refer
   h.invoke('open-dictionary-window'); h.evaluate('dictionaryWindow.close()');
   h.invoke('set-game-mode-enabled', true); assert.equal(h.invoke('start-capture-translate'), true);
   h.invoke('cancel-capture-translate'); assert.equal(h.evaluate('captureWindow'), null);
-  h.invoke('set-game-mode-enabled', false); assert.equal(h.invoke('start-capture-translate'), false);
+  h.invoke('set-game-mode-enabled', false); assert.equal(h.invoke('start-capture-translate'), true);
 });
 test('dictionary delete and exports preserve quoted text, Cyrillic and dates', async t => {
   const h = mainHarness(t);

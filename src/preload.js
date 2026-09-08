@@ -8,6 +8,11 @@ function subscribe(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld('overlayApi', {
+  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
+  restoreWindowSize: () => ipcRenderer.invoke('restore-window-size'),
+  resetUiSettings: () => ipcRenderer.invoke('reset-ui-settings'),
+  onCaptureRequested: (callback) => subscribe('capture-requested', callback),
   openSrt: () => ipcRenderer.invoke('open-srt'),
   translate: (text, scope) => ipcRenderer.invoke('translate', text, scope),
   translateText: (text, sourceLanguage, targetLanguage, scope) => ipcRenderer.invoke('translate-text', text, sourceLanguage, targetLanguage, scope),

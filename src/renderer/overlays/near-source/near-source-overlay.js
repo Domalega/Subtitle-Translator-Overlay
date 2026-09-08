@@ -2,6 +2,7 @@ const card = document.getElementById('card');
 const translation = document.getElementById('translation');
 
 function applySettings(settings = {}) {
+  window.Themes.apply(document, settings.theme);
   const root = document.documentElement.style;
   if (Number.isFinite(Number(settings.nearSourceFontSize))) root.setProperty('--font-size', `${Number(settings.nearSourceFontSize)}px`);
   if (Number.isFinite(Number(settings.nearSourceBackgroundOpacity))) root.setProperty('--opacity', String(settings.nearSourceBackgroundOpacity));

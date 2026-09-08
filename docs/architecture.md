@@ -12,7 +12,7 @@ Main windows currently loaded by `BrowserWindow.loadFile()` are:
 - `src/renderer/settings/settings.html`: settings tool window.
 - `src/renderer/dictionary/dictionary.html`: dictionary tool window.
 - `src/renderer/capture/select.html`: Screen OCR area selection window.
-- `src/renderer/capture/capture-select.html`: Game mode capture selection window.
+- `src/renderer/capture/capture-select.html`: one-shot capture selection window.
 - `src/renderer/overlays/near-source/near-source-overlay.html`: independent transparent translation-only window.
 - `src/renderer/overlays/developer-zone/developer-ocr-zone.html`: transparent, mouse-pass-through diagnostic border outside the saved OCR crop.
 
@@ -41,27 +41,27 @@ These modules do not require Electron and can be tested with `node:test`.
 
 `ScreenOcrCoordinator` uses only an output contract: `showRecognizedText(text)`, `showTranslationPending(sourceText)`, `showTranslation(translatedText, sourceText)`, `showTranslationError(error)`, `setStatus(status)`, `clear()`, and `setVisible(visible)`. It has no DOM or `BrowserWindow` dependency.
 
-`OutputRouter` always forwards Screen OCR output to `MainPanelOutput`. In `near-source` mode it also forwards successful translations to `NearSourceOutput`; pending and errors preserve the last successful translation. It retains the last recognized text and successful translation. Game mode is explicitly excluded from the near-source route.
+`OutputRouter` always forwards Screen OCR output to `MainPanelOutput`. In `overlay` or `both` mode it also forwards successful translations to `NearSourceOutput`; pending and errors preserve the last successful translation. It retains the last recognized text and successful translation. One-shot captures and manual editing are excluded from the near-source route. The internal legacy game-mode flag now represents transient manual-output ownership, not a selectable UI mode.
 
 `NearSourceOutput` is an adapter with injected `showOverlay`, `hideOverlay`, `clearOverlay`, and `updateOverlaySettings` dependencies. It contains no Electron API or OCR/translation logic.
 
 ## Screen OCR Flow
 
-1. The user selects an OCR area from `Settings`.
+1. The user selects an OCR area directly from the main window or Translation settings.
 2. `src/renderer/capture/select.html` sends `complete-ocr-area` through preload.
 3. Main stores the selected OCR area and broadcasts `ocr-area-changed`.
-4. The main overlay enables `Read once` and `Start` behavior through `ScreenOcrCoordinator`.
+4. The main overlay enables one-shot read and continuous translation behavior through `ScreenOcrCoordinator`.
 5. `ScreenOcrCoordinator` polls `capture-screen-subtitle-frame` every 200 ms, with changed-frame detection and periodic forced refreshes; `Read once` forces capture.
 6. Main returns a cropped frame and area revision. `recognize-screen-subtitle-frame` prepares the crop with `src/main/services/subtitle-image-preprocessor.js` (component filtering, polarity, border and letter-height normalization), then runs the serialized Tesseract worker, rejects stale area revisions, cleans OCR text and returns text. Capture and recognition queues track generations across Stop/Start. The legacy `read-screen-subtitle` path remains available.
 7. `SubtitleStabilizer` filters empty OCR, OCR noise, duplicate subtitles, similar subtitles, and growing candidates.
 8. Accepted candidates are translated through the existing `translate` IPC path.
-9. `MainPanelOutput` updates the main English and Russian text columns.
+9. `MainPanelOutput` updates the translated result and expandable English original.
 
 ## Near-Source Overlay
 
 The main process creates one reusable `nearSourceWindow`. It is transparent, frameless, always-on-top, taskbar-free, non-resizable, non-focusable, created hidden, and has `contextIsolation: true` and `nodeIntegration: false`. Mouse events are ignored and it is displayed with `showInactive()` only after a renderer measurement.
 
-The overlay renderer uses `textContent`, measures its card on `requestAnimationFrame`, suppresses identical measurements, and returns its size. Main clamps the size and uses `src/shared/output/near-source-position.js` to put it below the anchor when possible, otherwise above it. It is hidden on Stop, panel mode, and Game mode; it is closed with the main window.
+The overlay renderer uses `textContent`, measures its card on `requestAnimationFrame`, suppresses identical measurements, and returns its size. Main clamps the size and uses `src/shared/output/near-source-position.js` to put it below the anchor when possible, otherwise above it. It is hidden on Stop, panel mode, and one-shot capture; it is closed with the main window.
 
 ## Coordinates
 
@@ -99,7 +99,7 @@ Main uses `TranslationService` for the current Google Translate endpoint:
 - scoped stale request cancellation;
 - normalized translation errors.
 
-Renderer keeps using the existing preload IPC methods. Screen OCR, manual retranslate, and Game mode use separate translation scopes so they do not cancel each other accidentally.
+Renderer keeps using the existing preload IPC methods. Screen OCR, manual retranslate, and one-shot captures use separate translation scopes so they do not cancel each other accidentally.
 
 ## Settings Flow
 
@@ -109,7 +109,7 @@ Main loads `ui-settings.json`, normalizes missing or invalid fields, preserves u
 
 Hidden legacy Game OCR settings may remain in old JSON files, but they are not shown in the current settings interface.
 
-Near-source settings are `displayMode` (`panel` by default or `near-source`), placement, vertical offset, font size, background opacity, maximum width, and maximum lines. Invalid saved values are normalized while unrelated legacy JSON fields are preserved.
+Near-source settings are `displayMode` (`panel`, `overlay`, or `both`), placement, vertical offset, font size, background opacity, maximum width, and maximum lines. Invalid saved values are normalized while unrelated legacy JSON fields are preserved.
 
 ## Dictionary Flow
 
@@ -194,3 +194,7 @@ There is no `ipcRenderer.send()` usage in the current source.
 Tesseract workers use the local English model with downloads/cache writes disabled. The source model is `resources/ocr/eng.traineddata`. In packaged builds it lives in `resources/eng.traineddata`; all runtime `node_modules`, including the worker/WASM and their dependencies, are unpacked outside ASAR. OcrWorkerService serializes jobs, bounds initialization/recognition/disposal and retires late workers. See [stage-1 audit](audit-stage-1.md) for regression coverage, integration checks and remaining OS acceptance work.
 
 The [OCR 0.2.2 report](ocr-quality-0.2.2.md) describes sample replay and preprocessing evidence. `npm run verify` checks source-mode integration; `test/integration/packaged-ocr-smoke.js` is a separate check using the packaged executable and its resources.
+
+## UI architecture
+
+See [UI design and extension points](ui-design.md) for the two-action workflow, semantic themes, English localization catalog, reset transactions, and verification boundaries. The main window keeps the full result available for every display setting. Diagnostics now live in Advanced settings. UI smoke tests use offscreen rendering with an isolated profile and save previews in `.agent/tmp/ui-preview/`.

@@ -1,173 +1,223 @@
-<!doctype html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Settings</title>
-    <link rel="stylesheet" href="../shared/tool-window.css" />
-  </head>
-  <body>
-    <main class="toolWindow">
-      <header class="toolTitlebar">
-        <div>
-          <strong>Settings</strong>
-          <span>Overlay appearance and OCR area</span>
-        </div>
-        <button id="closeWindow" class="windowButton">Close</button>
-      </header>
-
-      <section class="card">
-        <button id="selectOcrArea" class="primary">Select OCR area</button>
-        <p class="hint">Choose only the original subtitle area at the bottom of the video.</p>
-      </section>
-
-      <section class="card">
-        <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="developerModeToggle" /> Developer mode</label>
-        <p class="hint">Show the OCR area and current processing stage for diagnostics.</p>
-      </section>
-
-      <section class="card">
-        <div class="accordionHeader" data-section="display">
-          <strong>Display mode</strong>
-          <span class="accordionChevron">▸</span>
-        </div>
-        <div class="accordionBody formGrid" id="sectionDisplay">
-          <label>Mode
-            <select id="displayMode"><option value="panel">Main window only</option><option value="overlay">Overlay only</option><option value="both">Main window + overlay</option></select>
-          </label>
-          <div id="nearSourceSettings" hidden>
-            <label>Placement
-              <select id="nearSourcePlacement"><option value="auto">Auto</option><option value="below">Below</option><option value="above">Above</option></select>
-            </label>
-            <label>Vertical offset <div class="sliderRow"><input id="nearSourceVerticalOffset" type="range" min="0" max="100" value="10" /><span class="sliderValue" id="nearSourceVerticalOffsetValue">10 px</span></div></label>
-            <label>Font size <div class="sliderRow"><input id="nearSourceFontSize" type="range" min="12" max="64" value="24" /><span class="sliderValue" id="nearSourceFontSizeValue">24 px</span></div></label>
-            <label>Background opacity <div class="sliderRow"><input id="nearSourceBackgroundOpacity" type="range" min="10" max="100" value="70" /><span class="sliderValue" id="nearSourceBackgroundOpacityValue">70%</span></div></label>
-            <label>Maximum width <div class="sliderRow"><input id="nearSourceMaxWidth" type="range" min="240" max="1400" value="900" /><span class="sliderValue" id="nearSourceMaxWidthValue">900 px</span></div></label>
-            <label>Maximum lines <div class="sliderRow"><input id="nearSourceMaxLines" type="range" min="1" max="6" value="3" /><span class="sliderValue" id="nearSourceMaxLinesValue">3</span></div></label>
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="accordionHeader" data-section="appearance">
-          <strong>Appearance</strong>
-          <span class="accordionChevron">▸</span>
-        </div>
-        <div class="accordionBody formGrid" id="sectionAppearance">
-          <label>
-            Theme
-            <select id="themeSelect">
-              <option value="green">Green</option>
-              <option value="blue">Blue</option>
-              <option value="purple">Purple</option>
-              <option value="dark">Dark</option>
-              <option value="nothing">Nothing Light</option>
-              <option value="nothing-dark">Nothing Dark</option>
-              <option value="nothing-os-light">Nothing OS Light</option>
-              <option value="nothing-os-dark">Nothing OS Dark</option>
-            </select>
-          </label>
-          <label>
-            Font
-            <select id="fontSelect">
-              <option value="system">System</option>
-              <option value="inter">Inter</option>
-              <option value="segoe ui">Segoe UI</option>
-              <option value="arial">Arial</option>
-              <option value="consolas">Consolas</option>
-              <option value="jetbrains mono">JetBrains Mono</option>
-              <option value="dot matrix">Dot Matrix</option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="accordionHeader" data-section="size">
-          <strong>Overlay size</strong>
-          <span class="accordionChevron">▸</span>
-        </div>
-        <div class="accordionBody formGrid" id="sectionSize">
-          <label>
-            Text size
-            <div class="sliderRow">
-              <input id="fontScale" type="range" min="70" max="150" value="100" />
-              <span class="sliderValue" id="fontScaleValue">100%</span>
-            </div>
-          </label>
-          <label>
-            Window width
-            <div class="sliderRow">
-              <input id="windowWidth" type="range" min="620" max="1500" value="980" />
-              <span class="sliderValue" id="windowWidthValue">980 px</span>
-            </div>
-          </label>
-          <label>
-            Window height
-            <div class="sliderRow">
-              <input id="windowHeight" type="range" min="260" max="760" value="360" />
-              <span class="sliderValue" id="windowHeightValue">360 px</span>
-            </div>
-          </label>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="accordionHeader" data-section="gameOcr">
-          <strong>Game mode</strong>
-          <span class="accordionChevron">▸</span>
-        </div>
-        <div class="accordionBody formGrid" id="sectionGameOcr">
-          <label>
-            Capture hotkey
-            <input type="text" id="gameHotkey" placeholder="CommandOrControl+Shift+T" />
-          </label>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="accordionHeader" data-section="dictionary">
-          <strong>Dictionary</strong>
-          <span class="accordionChevron">▸</span>
-        </div>
-        <div class="accordionBody formGrid" id="sectionDictionary">
-          <label style="display:flex;align-items:center;gap:8px">
-            <input type="checkbox" id="deleteConfirmToggle" checked />
-            Confirm before deleting words
-          </label>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="accordionHeader" data-section="context">
-          <strong>Context</strong>
-          <span class="accordionChevron">▸</span>
-        </div>
-        <div class="accordionBody formGrid" id="sectionContext">
-          <label>
-            Context examples count
-            <select id="contextCountSelect">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-              <option value="6">6</option>
-              <option value="7">7</option>
-              <option value="8">8</option>
-              <option value="9">9</option>
-              <option value="10">10</option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section class="card">
-        <button id="resetDefaults">Reset to defaults</button>
-      </section>
-
-      <div id="status" class="status" hidden></div>
-    </main>
-    <script src="settings.js"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="settings">Settings</title>
+<link rel="stylesheet" href="../shared/ui.css">
+<link rel="stylesheet" href="../shared/tool-window.css">
+</head>
+<body>
+<main class="toolWindow">
+<header class="toolTitlebar">
+<div>
+<strong data-i18n="settings">Settings</strong>
+<span data-i18n="make.translation.comfortable">Make translation comfortable</span>
+</div>
+<button id="closeWindow" data-i18n="close">Close</button>
+</header>
+<nav class="settingsNav" aria-label="Settings sections" data-i18n-aria-label="settings.sections">
+<button type="button" data-settings-section="translation" aria-pressed="true" data-i18n="translation">Translation</button>
+<button type="button" data-settings-section="display" aria-pressed="false" data-i18n="display">Display</button>
+<button type="button" data-settings-section="appearance" aria-pressed="false" data-i18n="appearance">Appearance</button>
+<button type="button" data-settings-section="dictionary" aria-pressed="false" data-i18n="dictionary">Dictionary</button>
+<button type="button" data-settings-section="advanced" aria-pressed="false" data-i18n="advanced">Advanced</button>
+</nav>
+<div class="settingsContent">
+<section class="card" data-settings-panel="translation">
+<h2 data-i18n="translation">Translation</h2>
+<div class="formGrid">
+<div>
+<button id="selectOcrArea" data-i18n="choose.subtitle.area">Choose subtitle area</button>
+<p class="hint" data-i18n="select.only.the.original.english.subtitles.on.your.primary.displa">Select only the original English subtitles on your primary display.</p>
+</div>
+<label>
+<span data-i18n="translate.an.area.shortcut">Translate an area · shortcut</span>
+<input id="gameHotkey" type="text" readonly="" aria-describedby="hotkeyHint">
+</label>
+<p id="hotkeyHint" class="hint" data-i18n="click.the.field.and.press.a.shortcut.with.ctrl.alt.or.shift.escape.c">Click the field and press a shortcut with Ctrl or Alt. Escape cancels.</p>
+<p class="hint" data-i18n="ctrl.shift.o.restores.the.window.ctrl.shift.s.stops.subtitles">Ctrl+Shift+O restores the window. Ctrl+Shift+S stops subtitles.</p>
+</div>
+</section>
+<section class="card" data-settings-panel="display" hidden="">
+<h2 data-i18n="display">Display</h2>
+<div class="formGrid">
+<label>
+<span data-i18n="show.translation">Show translation</span>
+<select id="displayMode">
+<option value="panel" data-i18n="in.the.window">In the window</option>
+<option value="overlay" data-i18n="over.the.video">Over the video</option>
+<option value="both" data-i18n="in.both.places">In both places</option>
+</select>
+</label>
+<label>
+<span data-i18n="window.text.size">Window text size</span>
+<div class="sliderRow">
+<input id="fontScale" type="range" min="70" max="150" value="100">
+<span id="fontScaleValue" class="sliderValue">
+</span>
+</div>
+</label>
+<div id="nearSourceSettings" class="formGrid" hidden="">
+<label>
+<span data-i18n="position">Position</span>
+<select id="nearSourcePlacement">
+<option value="auto" data-i18n="automatic">Automatic</option>
+<option value="below" data-i18n="below.subtitles">Below subtitles</option>
+<option value="above" data-i18n="above.subtitles">Above subtitles</option>
+</select>
+</label>
+<label>
+<span data-i18n="subtitle.size">Subtitle size</span>
+<div class="sliderRow">
+<input id="nearSourceFontSize" type="range" min="12" max="64" value="24">
+<span id="nearSourceFontSizeValue" class="sliderValue">
+</span>
+</div>
+</label>
+<label>
+<span data-i18n="background.opacity">Background opacity</span>
+<div class="sliderRow">
+<input id="nearSourceBackgroundOpacity" type="range" min="10" max="100" value="70">
+<span id="nearSourceBackgroundOpacityValue" class="sliderValue">
+</span>
+</div>
+</label>
+<div class="preview" aria-label="Subtitle preview" data-i18n-aria-label="subtitle.preview">
+<div id="subtitlePreview" class="previewText" data-i18n="a.new.world.is.waiting">A new world is waiting.</div>
+</div>
+<details>
+<summary data-i18n="fine.tune.placement">Fine-tune placement</summary>
+<div class="formGrid">
+<label>
+<span data-i18n="vertical.spacing">Vertical spacing</span>
+<div class="sliderRow">
+<input id="nearSourceVerticalOffset" type="range" min="0" max="100" value="10">
+<span id="nearSourceVerticalOffsetValue" class="sliderValue">
+</span>
+</div>
+</label>
+<label>
+<span data-i18n="maximum.width">Maximum width</span>
+<div class="sliderRow">
+<input id="nearSourceMaxWidth" type="range" min="240" max="1400" value="900">
+<span id="nearSourceMaxWidthValue" class="sliderValue">
+</span>
+</div>
+</label>
+<label>
+<span data-i18n="maximum.lines">Maximum lines</span>
+<div class="sliderRow">
+<input id="nearSourceMaxLines" type="range" min="1" max="6" value="3">
+<span id="nearSourceMaxLinesValue" class="sliderValue">
+</span>
+</div>
+</label>
+</div>
+</details>
+</div>
+</div>
+</section>
+<section class="card" data-settings-panel="appearance" hidden="">
+<h2 data-i18n="appearance">Appearance</h2>
+<div class="formGrid">
+<label>
+<span data-i18n="theme">Theme</span>
+<select id="themeSelect">
+<option value="dark" data-i18n="dark">Dark</option>
+<option value="light" data-i18n="light">Light</option>
+</select>
+</label>
+<label>
+<span data-i18n="font">Font</span>
+<select id="fontSelect">
+<option value="system" data-i18n="system">System</option>
+<option value="inter">Inter</option>
+<option value="jetbrains mono">JetBrains Mono</option>
+<option value="dot matrix">Dot Matrix</option>
+<option value="segoe ui" data-i18n="segoe.ui">Segoe UI</option>
+<option value="arial" data-i18n="arial">Arial</option>
+<option value="consolas" data-i18n="consolas">Consolas</option>
+</select>
+</label>
+<button id="restoreSize" data-i18n="restore.window.size.and.position">Restore window size and position</button>
+</div>
+</section>
+<section class="card" data-settings-panel="dictionary" hidden="">
+<h2 data-i18n="dictionary">Dictionary</h2>
+<div class="formGrid">
+<label class="check">
+<input type="checkbox" id="deleteConfirmToggle" checked="">
+<span data-i18n="confirm.word.deletion">Confirm word deletion</span>
+</label>
+<label>
+<span data-i18n="context.examples">Context examples</span>
+<select id="contextCountSelect">
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+<option value="4">4</option>
+<option value="5">5</option>
+<option value="6">6</option>
+<option value="7">7</option>
+<option value="8">8</option>
+<option value="9">9</option>
+<option value="10">10</option>
+</select>
+</label>
+</div>
+</section>
+<section class="card" data-settings-panel="advanced" hidden="">
+<h2>Advanced</h2>
+<div class="formGrid">
+<label class="check">
+<input type="checkbox" id="developerModeToggle">
+<span data-i18n="show.diagnostic.overlays">Show diagnostic overlays</span>
+</label>
+<section id="developerTools" class="developerTools" hidden="">
+<h2 data-i18n="diagnostics">Diagnostics</h2>
+<div id="developerStatus" class="developerStatus" data-i18n="waiting.for.diagnostics">Waiting for diagnostics</div>
+<div class="developerButtons">
+<button id="saveOcrSample" data-i18n="save.ocr.sample">Save OCR sample</button>
+<button id="saveDetectionSample" data-i18n="save.detection.sample">Save detection sample</button>
+<button id="openOcrDiagnostics" data-i18n="open.diagnostics.folder">Open diagnostics folder</button>
+<button id="findSubtitleArea" data-i18n="find.subtitles.now">Find subtitles now</button>
+<button id="useDetectedSubtitleArea" data-i18n="use.detected.area">Use detected area</button>
+<button id="stopAutoTracking" data-i18n="stop.auto.tracking">Stop auto tracking</button>
+</div>
+</section>
+<button id="resetDefaults" class="danger" data-i18n="reset.settings">Reset settings…</button>
+</div>
+</section>
+</div>
+<div id="status" class="status settingsStatus" role="status" hidden="">
+</div>
+<div id="resetModal" class="modal">
+<div class="modalContent">
+<div class="modalHeader">
+<h2 data-i18n="reset.settings.2">Reset settings?</h2>
+</div>
+<p data-i18n="appearance.display.options.and.the.capture.shortcut.will.return.t">Appearance, display options and the capture shortcut will return to defaults. Your dictionary and subtitle area will be kept.</p>
+<div class="modalFooter">
+<button id="cancelReset" data-i18n="cancel">Cancel</button>
+<button id="confirmReset" class="danger" data-i18n="reset.settings.3">Reset settings</button>
+</div>
+</div>
+</div>
+</main>
+<script src="../../shared/ui/locales/en.js">
+</script>
+<script src="../../shared/ui/i18n.js">
+</script>
+<script src="../shared/localize.js">
+</script>
+<script src="../../shared/settings/themes.js">
+</script>
+<script src="../shared/ui.js">
+</script>
+<script src="settings.js">
+</script>
+<script src="../main/subtitle-area-detection-controller.js">
+</script>
+</body>
 </html>

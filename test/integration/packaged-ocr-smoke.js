@@ -2,7 +2,7 @@
 // Run with the packaged executable and ELECTRON_RUN_AS_NODE=1.
 const fs = require('node:fs'); const path = require('node:path'); const assert = require('node:assert/strict');
 async function main() {
-  const resources = path.resolve(process.argv[2]);
+  const resources = fs.realpathSync(path.resolve(process.argv[2]));
   const archive = path.join(resources, 'app.asar');
   const { createRequire } = require('node:module');
   const unpacked = path.join(resources, 'app.asar.unpacked');

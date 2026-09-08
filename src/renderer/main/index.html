@@ -1,62 +1,101 @@
-<!doctype html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Subtitle Translation Overlay</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main class="app">
-      <section class="panel">
-        <div class="mainHeader" style="-webkit-app-region: drag;">
-          <div class="appTitle">Subtitle Translator Overlay</div>
-          <div class="headerButtons" style="-webkit-app-region: no-drag;">
-            <button id="playPause" class="primary">Start</button>
-            <button id="ocrOnce">Read once</button>
-            <button id="addWord">Add word</button>
-            <button id="dictionaryOpen">Dictionary</button>
-            <button id="settingsToggle">Settings</button>
-            <button id="focusToggle">Focus mode</button>
-            <button id="gameModeToggle">Game mode</button>
-          </div>
-        </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="subtitle.translator">Subtitle Translator</title>
+<link rel="stylesheet" href="../shared/ui.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="app">
+<section class="panel">
+<header class="titlebar">
+<strong data-i18n="subtitle.translator">Subtitle Translator</strong>
+<div class="row">
+<details class="menu" id="moreMenu">
+<summary aria-label="More actions" data-i18n-aria-label="more.actions" data-i18n="more">More</summary>
+<div>
+<button id="dictionaryOpen" data-i18n="dictionary">Dictionary</button>
+<button id="ocrOnce" data-i18n="read.subtitle.area.once">Read subtitle area once</button>
+<button id="restoreSize" data-i18n="restore.window.size">Restore window size</button>
+</div>
+</details>
+<button id="settingsToggle" data-i18n="settings">Settings</button>
+<button id="minimizeWindow" aria-label="Minimize window" title="Minimize window" data-i18n-title="minimize.window" data-i18n-aria-label="minimize.window">−</button>
+<button id="closeWindow" aria-label="Quit application" title="Quit application" data-i18n-title="quit.application" data-i18n-aria-label="quit.application">×</button>
+</div>
+</header>
+<div class="workspace">
+<div id="welcome" class="welcome">
+<h1 data-i18n="translate.what.you.watch">Translate what you watch</h1>
+<p class="hint" data-i18n="choose.the.english.subtitle.area.then.start.translating.into.russ">Choose the English subtitle area, then start translating into Russian.</p>
+</div>
+<div class="toolbar">
+<button id="playPause" class="primary" data-i18n="choose.subtitle.area">Choose subtitle area</button>
+<button id="captureTranslate" data-i18n="translate.an.area">Translate an area</button>
+</div>
+<div class="areaRow">
+<span id="areaStatus" data-i18n="no.subtitle.area.selected">No subtitle area selected</span>
+<button id="selectOcrArea" class="textButton" data-i18n="change.area">Change area</button>
+</div>
+<p id="overlayNotice" class="overlayNotice" hidden="" data-i18n="translation.is.shown.over.your.video.the.full.result.is.also.avai">Translation is shown over your video. The full result is also available below.</p>
+<div class="subtitleBox">
+<div class="label" data-i18n="translation.russian">TRANSLATION · RUSSIAN</div>
+<p id="emptyResult" class="hint" data-i18n="your.translation.will.appear.here">Your translation will appear here.</p>
+<div id="russianText" class="subtitleText">
+</div>
+<details class="original" id="originalDetails">
+<summary data-i18n="original.english">Original · English</summary>
+<div id="englishText" class="subtitleText" role="textbox" aria-label="Original text" aria-readonly="true" data-i18n-aria-label="original.text">
+</div>
+</details>
+</div>
+<div class="resultActions">
+<button id="copyTranslation" data-i18n="copy.translation">Copy translation</button>
+<button id="editOriginal" data-i18n="edit.original">Edit original</button>
+<button id="addWord" hidden="" data-i18n="add.selected.word">Add selected word</button>
+<button id="retranslateButton" hidden="" data-i18n="translate.changes">Translate changes</button>
+<button id="cancelEdit" hidden="" data-i18n="cancel.editing">Cancel editing</button>
+<button id="resumeTranslation" hidden="" data-i18n="continue.subtitles">Continue subtitles</button>
+</div>
+</div>
+<footer class="footer">
+<div id="status" class="status" role="status" hidden>Ready</div>
+<div id="actionStatus" class="status" role="status" hidden="">
+</div>
+</footer>
+</section>
+</main>
+    <script src="../../shared/ui/locales/en.js">
+</script>
+<script src="../../shared/ui/i18n.js">
+</script>
+<script src="../shared/localize.js">
+</script>
+<script src="../../shared/settings/themes.js">
+</script>
+<script src="../shared/ui.js">
+</script>
+<script src="../../shared/ocr/text-utils.js">
+</script>
+    <script src="../../shared/ocr/subtitle-stabilizer.js">
+</script>
+    <script src="../../shared/output/main-panel-output.js">
+</script>
+    <script src="../../shared/output/near-source-output.js">
+</script>
+    <script src="../../shared/output/output-router.js">
+</script>
+    <script src="../../shared/ocr/latest-frame-queue.js">
+</script>
+    <script src="../../shared/ocr/screen-ocr-coordinator.js">
+</script>
+    <script src="renderer.js">
+</script>
 
-        <div class="status" id="status"></div>
-        <section id="developerTools" class="developerTools" hidden>
-          <div class="developerToolsHeader">Developer tools</div>
-          <div id="developerStatus" class="developerStatus">Developer status unavailable</div>
-          <div class="developerButtons">
-            <button id="saveOcrSample">Save OCR sample</button>
-            <button id="saveDetectionSample">Save detection sample</button>
-            <button id="openOcrDiagnostics">Open diagnostics folder</button>
-            <button id="findSubtitleArea">Find subtitles now</button>
-            <button id="useDetectedSubtitleArea">Use detected area</button>
-            <button id="stopAutoTracking">Stop auto tracking</button>
-          </div>
-        </section>
-        <button id="retranslateButton" hidden>Retranslate edited</button>
 
-        <div class="subtitleBox">
-          <div class="subtitleColumn original">
-            <div class="label">English</div>
-            <div id="englishText" class="subtitleText">No subtitle loaded</div>
-          </div>
-          <div class="subtitleColumn translated">
-            <div class="label">Russian</div>
-            <div id="russianText" class="subtitleText">Translation will appear here</div>
-          </div>
-        </div>
-      </section>
-    </main>
-    <script src="../../shared/ocr/text-utils.js"></script>
-    <script src="../../shared/ocr/subtitle-stabilizer.js"></script>
-    <script src="../../shared/output/main-panel-output.js"></script>
-    <script src="../../shared/output/near-source-output.js"></script>
-    <script src="../../shared/output/output-router.js"></script>
-    <script src="../../shared/ocr/latest-frame-queue.js"></script>
-    <script src="../../shared/ocr/screen-ocr-coordinator.js"></script>
-    <script src="renderer.js"></script>
-    <script src="subtitle-area-detection-controller.js"></script>
-  </body>
+
+
+</body>
 </html>

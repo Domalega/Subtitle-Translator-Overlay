@@ -16,7 +16,8 @@ test('OutputRouter routes panel, overlay, and both modes explicitly', () => {
   assert.deepEqual(near.calls[0], ['translation', 'one', 'source']);
   const mainCount = main.calls.length;
   router.showTranslation('two', 'source two');
-  assert.equal(main.calls.length, mainCount);
+  assert.equal(main.calls.length, mainCount + 1);
+  assert.deepEqual(main.calls.at(-1), ['translation', 'two', 'source two']);
   router.setDisplayMode('both');
   router.showTranslation('three', 'source three');
   assert.ok(main.calls.some((call) => call[0] === 'translation' && call[1] === 'three'));

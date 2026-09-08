@@ -1,14 +1,24 @@
-<!doctype html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Select OCR Area</title>
-    <link rel="stylesheet" href="select.css" />
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="select.ocr.area">Select OCR Area</title>
+    <link rel="stylesheet" href="select.css">
   </head>
   <body>
-    <div class="hint">Выдели мышью область с оригинальными субтитрами. Esc отмена.</div>
-    <div id="selection"></div>
-    <script src="select.js"></script>
-  </body>
+    <div class="hint" role="status" data-i18n="drag.around.the.original.english.subtitles.escape.cancels">Drag around the original English subtitles. Escape cancels.</div>
+    <div id="selection">
+</div>
+    <script src="../../shared/ui/locales/en.js">
+</script>
+<script src="../../shared/ui/i18n.js">
+</script>
+<script src="../shared/localize.js">
+</script>
+<script src="select.js">
+</script>
+
+
+</body>
 </html>

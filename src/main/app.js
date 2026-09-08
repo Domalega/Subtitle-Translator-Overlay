@@ -134,7 +134,7 @@ function trackingDetails() {
 function sendTrackingStatus(stage) { sendDeveloperStatus(stage, trackingDetails()); }
 
 function developerZoneColor(theme) {
-  return ({ green: '#41d17c', blue: '#4ca8ff', purple: '#b07cff', dark: '#d7dce2', nothing: '#222222', 'nothing-dark': '#eeeeee', 'nothing-os-light': '#222222', 'nothing-os-dark': '#eeeeee' })[theme] || '#41d17c';
+  return theme === 'light' ? '#2859bd' : '#9bb9ff';
 }
 
 function excludeWindowFromScreenCapture(window) {
@@ -143,7 +143,7 @@ function excludeWindowFromScreenCapture(window) {
 }
 
 function sendDeveloperStatus(stage, details = {}) {
-  if (loadUiSettings().developerMode === true) mainWindow?.webContents.send('developer-status', { stage, ...details });
+  if (loadUiSettings().developerMode === true) settingsWindow?.webContents.send('developer-status', { stage, ...details });
 }
 
 function updateDeveloperZone({ window, setWindow, getWindow, boundsDip, type, settings }) {
@@ -390,6 +390,7 @@ function createSelectionWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
+      offscreen: UI_SMOKE,
       nodeIntegration: false
     }
   });
@@ -424,6 +425,7 @@ function createToolWindow(fileName, title, width, height) {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
+      offscreen: UI_SMOKE,
       nodeIntegration: false
     }
   });
@@ -456,13 +458,16 @@ function createCaptureWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
+      offscreen: UI_SMOKE,
       nodeIntegration: false
     }
   });
   captureWindow.setAlwaysOnTop(true, 'screen-saver');
   captureWindow.loadFile(path.join(__dirname, '..', 'renderer', 'capture', 'capture-select.html'));
+  const createdCapture = captureWindow;
   captureWindow.on('closed', () => {
     captureWindow = null;
+    if (!createdCapture.captureCommitted) mainWindow?.webContents.send('capture-result', { cancelled: true });
   });
 }
 
@@ -498,6 +503,7 @@ function createNearSourceWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
+      offscreen: UI_SMOKE,
       nodeIntegration: false
     }
   });
@@ -603,6 +609,7 @@ async function runCaptureTranslate(area) {
       russian: ''
     }));
 
+    if (!UI_SMOKE) restoreMainWindow();
     mainWindow?.webContents.send('capture-result', {
       original: text,
       translation: translation || '',
@@ -670,6 +677,7 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
+      offscreen: UI_SMOKE,
       nodeIntegration: false
     }
   });
@@ -678,7 +686,17 @@ function createWindow() {
   excludeWindowFromScreenCapture(mainWindow);
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'main', 'index.html'));
 
+  let sizeSaveTimer;
+  mainWindow.on('resize', () => {
+    clearTimeout(sizeSaveTimer);
+    sizeSaveTimer = setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const [windowWidth, windowHeight] = mainWindow.getSize();
+      uiSettingsStore.update(settings => ({ ...settings, windowWidth, windowHeight })).catch(error => console.error('Window size could not be saved', error.message));
+    }, 250);
+  });
   mainWindow.on('closed', () => {
+    clearTimeout(sizeSaveTimer);
     subtitleDetectionRequestId += 1;
     gameRequestId += 1;
     clearTimeout(subtitleDetectionRetryTimer);
@@ -1416,12 +1434,15 @@ handleIpc('ocr-debug-metrics', (_event, metrics) => {
 });
 
 handleIpc('start-capture-translate', () => {
-  if (!gameModeEnabled || gameOcrBusy) return false;
+  if (gameOcrBusy) return false;
+  gameModeEnabled = true;
+  hideNearSourceOverlay();
   if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
   return true;
 });
 
 handleIpc('complete-capture-translate', (_event, area) => {
+  if (captureWindow) captureWindow.captureCommitted = true;
   captureWindow?.close();
   return runCaptureTranslate(area);
 });
@@ -1513,8 +1534,7 @@ function registerGameHotkey(accelerator) {
   if (accelerator === currentGameHotkey && gameHotkeyRegistered) return true;
   try {
     const registered = globalShortcut.register(accelerator, () => {
-      if (!gameModeEnabled) { mainWindow?.webContents.send('game-mode-disabled'); return; }
-      if (!gameOcrBusy && (!captureWindow || captureWindow.isDestroyed())) createCaptureWindow();
+      if (!gameOcrBusy && (!captureWindow || captureWindow.isDestroyed())) mainWindow?.webContents.send('capture-requested');
     });
     if (!registered) return false;
     if (gameHotkeyRegistered) globalShortcut.unregister(currentGameHotkey);
@@ -1528,7 +1548,30 @@ let gameHotkeyRegistered = false;
 handleIpc('set-game-hotkey', async (_event, accelerator) => {
   const previous = currentGameHotkey;
   if (!registerGameHotkey(accelerator)) return false;
-  try { await uiSettingsStore.update(settings => ({ ...settings, hotkey: currentGameHotkey })); }
+  try { await uiSettingsStore.update(settings => ({ ...settings, hotkey: currentGameHotkey }));
+    for(const win of [mainWindow,settingsWindow]) if(win && !win.isDestroyed()) win.webContents.send('apply-ui-setting',{key:'hotkey',value:currentGameHotkey});
+  }
   catch (error) { registerGameHotkey(previous); throw error; }
   return true;
+});
+
+handleIpc('minimize-window', () => { mainWindow?.minimize(); return true; });
+handleIpc('quit-app', () => { app.quit(); return true; });
+handleIpc('restore-window-size', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const display = screen.getPrimaryDisplay();
+  mainWindow.setSize(980, 360);
+  mainWindow.setPosition(Math.round(display.workArea.x + Math.max(0, (display.workArea.width-980)/2)), Math.round(display.workArea.y + Math.max(0, (display.workArea.height-360)/2)));
+  await uiSettingsStore.update(settings => ({ ...settings, windowWidth:980, windowHeight:360 }));
+  return true;
+});
+handleIpc('reset-ui-settings', async () => {
+  const previous = currentGameHotkey;
+  if (!registerGameHotkey(DEFAULT_UI_SETTINGS.hotkey)) throw new Error('The default shortcut is already in use.');
+  let settings;
+  try { settings = await uiSettingsStore.update(saved => ({ ...saved, ...DEFAULT_UI_SETTINGS })); }
+  catch(error) { registerGameHotkey(previous); throw error; }
+  updateNearSourceSettings(settings); updateDeveloperOcrZone(settings); updateDeveloperSubtitleCandidateZone(settings);
+  for (const win of [mainWindow,settingsWindow,dictionaryWindow]) if(win && !win.isDestroyed()) win.webContents.send('apply-ui-settings', settings);
+  return settings;
 });

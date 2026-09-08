@@ -23,8 +23,6 @@ const closeStudyModal = document.getElementById('closeStudyModal');
 const studyWordEl = document.getElementById('studyWord');
 const studyTranslationEl = document.getElementById('studyTranslation');
 const showTranslationBtn = document.getElementById('showTranslationBtn');
-const studyEasyBtn = document.getElementById('studyEasyBtn');
-const studyHardBtn = document.getElementById('studyHardBtn');
 const studyNextBtn = document.getElementById('studyNextBtn');
 
 const exportModal = document.getElementById('exportModal');
@@ -32,7 +30,7 @@ const closeExportModal = document.getElementById('closeExportModal');
 const exportCsvBtn = document.getElementById('exportCsvBtn');
 const exportJsonBtn = document.getElementById('exportJsonBtn');
 
-const ITEM_HEIGHT = 72;
+const ITEMS_PER_PAGE = 20;
 let page = 1;
 let pageSize = 1;
 let wordToDeleteId = null;
@@ -47,15 +45,16 @@ let contextRequestId = 0;
 const { calculateDictionaryPageSize, createDictionaryPagination } = window.DictionaryPagination;
 
 function getPageSize() {
-  pageSize = calculateDictionaryPageSize(dictionaryList.clientHeight, ITEM_HEIGHT, pageSize);
+  pageSize = ITEMS_PER_PAGE;
   return pageSize;
 }
 
-document.body.dataset.theme = 'green';
+document.body.dataset.theme = 'dark';
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
+  if (key === 'font') window.Appearance.apply({font:value});
   if (key === 'theme') {
-    document.body.dataset.theme = value;
+    window.Themes.apply(document,value); document.body.dataset.theme = window.Themes.normalizeId(value);
     localStorage.setItem('subtitle-overlay-theme', value);
   }
   if (key === 'deleteConfirm') {
@@ -66,8 +65,8 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
 async function loadUiSettings() {
   try {
-    const settings = await window.overlayApi.getUiSettings();
-    document.body.dataset.theme = settings.theme || 'green';
+    const settings = await window.uiReady; window.Appearance.apply(settings);
+    window.Themes.apply(document,settings.theme); document.body.dataset.theme = window.Themes.normalizeId(settings.theme);
     localStorage.setItem('subtitle-overlay-theme', document.body.dataset.theme);
     deleteConfirmEnabled = settings.deleteConfirm !== false;
     localStorage.setItem('subtitle-confirm-delete', deleteConfirmEnabled);
@@ -145,7 +144,7 @@ async function renderDictionary() {
   if (filteredEntries.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'emptyState';
-    empty.textContent = query ? 'No matching words found.' : 'No words yet. Select a word in the overlay and press Add word.';
+    empty.textContent = query ? window.I18n.t("no.matching.words.found") : window.I18n.t("no.words.yet.select.text.in.the.translation.window.then.choose.ad");
     dictionaryList.append(empty);
   }
 
@@ -169,19 +168,19 @@ async function renderDictionary() {
     const listen = document.createElement('button');
     listen.className = 'listenButton';
     listen.type = 'button';
-    listen.textContent = 'Listen';
+    listen.textContent = window.I18n.t("listen");
     listen.addEventListener('click', () => speakWord(entry.english || entry.sourceText));
 
     const context = document.createElement('button');
     context.className = 'contextButton';
     context.type = 'button';
-    context.textContent = 'Context';
+    context.textContent = window.I18n.t("context");
     context.addEventListener('click', async () => {
       const requestId = ++contextRequestId;
       const word = entry.english || entry.sourceText;
       contextContent.textContent = '';
-      contextContent.innerHTML = 'Loading context...';
-      contextModal.classList.add('show');
+      contextContent.textContent = window.I18n.t("loading.context");
+      window.Dialogs.show(contextModal);
 
       let result;
       try { result = await window.overlayApi.getContextSentences(word); } catch (error) {
@@ -191,7 +190,7 @@ async function renderDictionary() {
       if (requestId !== contextRequestId || !contextModal.classList.contains('show')) return;
       contextContent.textContent = '';
       if (result.length === 0) {
-        contextContent.textContent = 'No context sentences found for this word.';
+        contextContent.textContent = window.I18n.t("no.context.sentences.found.for.this.word");
       } else {
         result.forEach(s => {
           const contextEntry = document.createElement('div');
@@ -212,16 +211,17 @@ async function renderDictionary() {
     remove.className = 'deleteButton';
     remove.type = 'button';
     remove.textContent = '\uD83D\uDDD1';
-    remove.title = 'Delete word';
+    remove.title = window.I18n.t("delete.word"); remove.setAttribute('aria-label',window.I18n.t("delete.2")+(entry.english || entry.sourceText));
     remove.addEventListener('click', async () => {
       if (!deleteConfirmEnabled) {
-        try { await window.overlayApi.dictionaryDelete(entry.id); } catch (error) { dictionaryPageInfo.textContent = `Could not delete word: ${error.message}`; }
+        try { await window.overlayApi.dictionaryDelete(entry.id); } catch (error) { dictionaryNotice(window.I18n.t("could.not.delete.word")+error.message); }
         return;
       }
-      wordToDeleteId = entry.id;
+      document.getElementById('deleteStatus').hidden=true;
+    wordToDeleteId = entry.id;
       wordToDeleteElement = item;
-      wordToDeleteSpan.textContent = entry.english || entry.sourceText;
-      deleteConfirmModal.classList.add('show');
+      wordToDeleteSpan.textContent = window.I18n.t('word.delete.question',{word:entry.english || entry.sourceText});
+      window.Dialogs.show(deleteConfirmModal);
     });
 
     buttonContainer.append(listen, context, remove);
@@ -229,7 +229,7 @@ async function renderDictionary() {
     dictionaryList.append(item);
   });
 
-  dictionaryPageInfo.textContent = `Page ${page} / ${pagination.totalPages}`;
+  dictionaryPageInfo.textContent = window.I18n.t('page.count',{current:page,total:pagination.totalPages});
   dictionaryPrevButton.disabled = page <= 1;
   dictionaryNextButton.disabled = page >= pagination.totalPages;
 }
@@ -248,24 +248,26 @@ function renderDictionaryAfterLayout() {
 
 function hideModal(modalElement) {
   if (modalElement === contextModal) contextRequestId += 1;
-  modalElement.classList.remove('show');
+  window.Dialogs.hide(modalElement);
 }
 
 function showStudyWord() {
   if (studyWords.length === 0) return;
+  document.getElementById('studyProgress').textContent=window.I18n.t('review.progress',{current:studyIndex+1,total:studyWords.length});
   const entry = studyWords[studyIndex];
   studyWordEl.textContent = entry.english || entry.sourceText;
   studyTranslationEl.textContent = '';
   showTranslationBtn.style.display = '';
-  studyEasyBtn.style.display = 'none';
-  studyHardBtn.style.display = 'none';
+
+
   studyNextBtn.style.display = 'none';
   studyTranslationShown = false;
 }
 
 function nextStudyWord() {
   if (studyWords.length === 0) return;
-  studyIndex = (studyIndex + 1) % studyWords.length;
+  studyIndex++;
+  if(studyIndex >= studyWords.length) { studyWordEl.textContent=window.I18n.t("review.complete"); studyTranslationEl.textContent=window.I18n.t("you.have.reviewed.all.words.in.this.session"); document.getElementById('studyProgress').textContent=studyWords.length+' / '+studyWords.length; showTranslationBtn.style.display='none'; studyNextBtn.style.display='none'; return; }
   showStudyWord();
 }
 
@@ -298,7 +300,7 @@ confirmDeleteButton.addEventListener('click', async () => {
         if (wordToDeleteId === deletedId) { wordToDeleteId = null; wordToDeleteElement = null; hideModal(deleteConfirmModal); }
       } catch (error) {
         deletedElement.removeAttribute('style');
-        wordToDeleteSpan.textContent = `Could not delete word: ${error.message}`;
+        const errorEl=document.getElementById('deleteStatus'); errorEl.hidden=false; errorEl.textContent=window.I18n.t("could.not.delete.word")+error.message;
       } finally { confirmDeleteButton.disabled = false; }
     }, 220);
   }
@@ -307,11 +309,11 @@ confirmDeleteButton.addEventListener('click', async () => {
 deleteConfirmModal.addEventListener('click', (e) => { if (e.target === deleteConfirmModal) hideModal(deleteConfirmModal); });
 
 studyButton.addEventListener('click', async () => {
-  const allEntries = await window.overlayApi.dictionaryGet().catch(error => { dictionaryPageInfo.textContent = error.message; return []; });
+  const allEntries = await window.overlayApi.dictionaryGet().catch(error => { dictionaryNotice(error.message); return []; });
   studyWords = sortEntries(allEntries);
-  if (studyWords.length === 0) return;
+  if (studyWords.length === 0) { dictionaryNotice(window.I18n.t("add.words.before.starting.a.review")); return; }
   studyIndex = 0;
-  studyModal.classList.add('show');
+  window.Dialogs.show(studyModal);
   showStudyWord();
 });
 
@@ -320,38 +322,32 @@ showTranslationBtn.addEventListener('click', () => {
   if (!entry) return;
   studyTranslationEl.textContent = entry.russian || '';
   showTranslationBtn.style.display = 'none';
-  studyEasyBtn.style.display = '';
-  studyHardBtn.style.display = '';
+
+
   studyNextBtn.style.display = '';
   studyTranslationShown = true;
 });
 
-studyEasyBtn.addEventListener('click', nextStudyWord);
-studyHardBtn.addEventListener('click', nextStudyWord);
+
+
 studyNextBtn.addEventListener('click', nextStudyWord);
 closeStudyModal.addEventListener('click', () => hideModal(studyModal));
 studyModal.addEventListener('click', (e) => { if (e.target === studyModal) hideModal(studyModal); });
 
-exportButton.addEventListener('click', () => exportModal.classList.add('show'));
+exportButton.addEventListener('click', () => window.Dialogs.show(exportModal));
 closeExportModal.addEventListener('click', () => hideModal(exportModal));
 exportModal.addEventListener('click', (e) => { if (e.target === exportModal) hideModal(exportModal); });
 
-exportCsvBtn.addEventListener('click', async () => {
-  const entries = await window.overlayApi.dictionaryGet().catch(error => { dictionaryPageInfo.textContent = error.message; return null; });
-  if (!entries) return;
-  const exported = await window.overlayApi.exportDictionary(entries, 'csv').catch(error => { dictionaryPageInfo.textContent = error.message; return false; });
-  if (!exported) return;
-  hideModal(exportModal);
-});
-
-exportJsonBtn.addEventListener('click', async () => {
-  const entries = await window.overlayApi.dictionaryGet().catch(error => { dictionaryPageInfo.textContent = error.message; return null; });
-  if (!entries) return;
-  const exported = await window.overlayApi.exportDictionary(entries, 'json').catch(error => { dictionaryPageInfo.textContent = error.message; return false; });
-  if (!exported) return;
-  hideModal(exportModal);
-});
-
+async function exportWords(format) {
+  exportCsvBtn.disabled=true; exportJsonBtn.disabled=true; const errorEl=document.getElementById('exportStatus'); errorEl.hidden=true;
+  try { const entries=await window.overlayApi.dictionaryGet(); if(await window.overlayApi.exportDictionary(entries,format)) { hideModal(exportModal); dictionaryNotice(window.I18n.t("dictionary.exported")); } }
+  catch(error) { errorEl.hidden=false; errorEl.textContent=window.I18n.t("could.not.export")+error.message; }
+  finally { exportCsvBtn.disabled=false; exportJsonBtn.disabled=false; }
+}
+exportCsvBtn.addEventListener('click',()=>exportWords('csv'));
+exportJsonBtn.addEventListener('click',()=>exportWords('json'));
+function dictionaryNotice(message) { const el=document.getElementById('dictionaryStatus'); el.hidden=false; el.textContent=message; }
+window.overlayApi.onApplyUiSettings(settings=>{ window.Appearance.apply(settings); window.Themes.apply(document,settings.theme); document.body.dataset.theme=window.Themes.normalizeId(settings.theme); deleteConfirmEnabled=settings.deleteConfirm!==false; });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     if (contextModal.classList.contains('show')) hideModal(contextModal);

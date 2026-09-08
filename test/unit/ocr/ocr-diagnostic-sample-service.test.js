@@ -9,7 +9,7 @@ async function createFixture(options = {}) {
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'ocr-diagnostics-test-'));
   const service = new OcrDiagnosticSampleService({
     getUserDataPath: () => userData,
-    getAppVersion: () => '0.2.1-test',
+    getAppVersion: () => '0.2.2-test',
     now: options.now || (() => new Date('2026-07-11T12:34:56.789Z')),
     random: () => 0.123,
     fs: options.fs || fs
@@ -62,7 +62,7 @@ test('saves expected images and metadata in a separate sample directory', async 
   assert.equal((await fs.readFile(path.join(samplePath, 'source.png'))).toString(), 'source');
   assert.equal((await fs.readFile(path.join(samplePath, 'ocr-input.png'))).toString(), 'input');
   const metadata = JSON.parse(await fs.readFile(path.join(samplePath, 'metadata.json'), 'utf8'));
-  assert.equal(metadata.appVersion, '0.2.1-test');
+  assert.equal(metadata.appVersion, '0.2.2-test');
   assert.equal(metadata.decision.normalizedText, 'example subtitle');
 });
 

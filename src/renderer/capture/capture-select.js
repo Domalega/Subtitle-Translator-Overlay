@@ -17,6 +17,7 @@ function updateSelection(currentX, currentY) {
 }
 
 window.addEventListener('mousedown', (event) => {
+  if (event.button !== 0) return;
   isDragging = true;
   startX = event.clientX;
   startY = event.clientY;
@@ -36,7 +37,8 @@ window.addEventListener('mouseup', (event) => {
   const width = Math.abs(event.clientX - startX);
   const height = Math.abs(event.clientY - startY);
   if (width < 20 || height < 20) {
-    window.overlayApi.cancelCaptureTranslate();
+    selection.style.display = 'none';
+    document.querySelector('.hint').textContent = window.I18n.t("this.area.is.too.small.drag.a.larger.area.or.press.escape.to.canc");
     return;
   }
   window.overlayApi.completeCaptureTranslate({ x, y, width, height });

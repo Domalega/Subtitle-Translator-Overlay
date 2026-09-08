@@ -1,8 +1,8 @@
 (function initMainPanelOutput(root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' && module.exports ? require('../ui/i18n') : root.I18n);
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.MainPanelOutputModule = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function createMainPanelOutput() {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function createMainPanelOutput(I18n) {
   class MainPanelOutput {
     constructor(elements) {
       this.englishTextElement = elements.englishTextElement;
@@ -20,12 +20,12 @@
 
     showTranslationPending() {
       if (this.russianTextElement && (!this.russianTextElement.textContent || this.russianTextElement.textContent === 'Translation will appear here')) {
-        this.russianTextElement.textContent = 'Translating...';
+        this.russianTextElement.textContent = I18n.t('translating');
       }
     }
 
     showTranslationError(message) {
-      if (this.statusElement) this.statusElement.textContent = message || 'Translation failed';
+      if (this.statusElement) this.statusElement.textContent = message || I18n.t('translation.failed');
     }
 
     setStatus(message) {

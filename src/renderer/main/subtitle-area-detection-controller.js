@@ -22,14 +22,14 @@
       if (searching) return;
       searching = true;
       button.disabled = true;
-      status.textContent = 'Finding subtitle area...';
+      status.textContent = window.I18n.t("finding.subtitle.area");
       try {
         const result = await window.overlayApi.findSubtitleArea();
-        if (result?.error === 'DETECTION_BUSY') status.textContent = 'Finding subtitle area...';
-        else if (result?.found) status.textContent = 'Subtitle area found. Use detected area to lock it';
-        else status.textContent = 'No subtitle area found';
+        if (result?.error === 'DETECTION_BUSY') status.textContent = window.I18n.t("finding.subtitle.area");
+        else if (result?.found) status.textContent = window.I18n.t("subtitle.area.found.use.detected.area.to.lock.it");
+        else status.textContent = window.I18n.t("no.subtitle.area.found");
       } catch (_) {
-        status.textContent = 'No subtitle area found';
+        status.textContent = window.I18n.t("no.subtitle.area.found");
       } finally {
         searching = false;
         button.disabled = false;
@@ -37,26 +37,26 @@
     });
     saveButton.addEventListener('click', async () => {
       const result = await window.overlayApi.saveOcrDiagnosticSample().catch(() => ({ ok: false }));
-      status.textContent = result?.ok ? 'OCR sample saved' : result?.error === 'NO_COMPLETED_OCR_SAMPLE' ? 'No completed OCR sample' : 'Failed to save OCR sample';
+      status.textContent = result?.ok ? window.I18n.t("ocr.sample.saved") : result?.error === 'NO_COMPLETED_OCR_SAMPLE' ? window.I18n.t("no.completed.ocr.sample") : window.I18n.t("failed.to.save.ocr.sample");
     });
     saveDetectionButton.addEventListener('click', async () => {
       const result = await window.overlayApi.saveDetectionSample().catch(() => ({ ok: false }));
-      status.textContent = result?.ok ? 'Detection sample saved' : 'No detection sample';
+      status.textContent = result?.ok ? window.I18n.t("detection.sample.saved") : window.I18n.t("no.detection.sample");
     });
     openButton.addEventListener('click', async () => {
-      if (!await window.overlayApi.openOcrDiagnosticsFolder().catch(() => false)) status.textContent = 'Failed to open diagnostics folder';
+      if (!await window.overlayApi.openOcrDiagnosticsFolder().catch(() => false)) status.textContent = window.I18n.t("failed.to.open.diagnostics.folder");
     });
     useButton.addEventListener('click', async () => {
       try {
         const result = await window.overlayApi.useDetectedSubtitleArea();
-        status.textContent = result?.ok ? 'Auto area locked' : 'No detected subtitle area';
-      } catch (_) { status.textContent = 'No detected subtitle area'; }
+        status.textContent = result?.ok ? window.I18n.t("auto.area.locked") : window.I18n.t("no.detected.subtitle.area");
+      } catch (_) { status.textContent = window.I18n.t("no.detected.subtitle.area"); }
     });
     stopButton.addEventListener('click', async () => {
       try {
         await window.overlayApi.stopAutoTracking();
-        status.textContent = 'Auto tracking stopped; using manual area';
-      } catch (_) { status.textContent = 'Auto tracking stopped'; }
+        status.textContent = window.I18n.t("auto.tracking.stopped.using.manual.area");
+      } catch (_) { status.textContent = window.I18n.t("auto.tracking.stopped"); }
     });
     window.overlayApi.onDeveloperStatus((event) => {
       if (tools.hidden || typeof event?.stage !== 'string') return;
@@ -75,6 +75,6 @@
   try {
     initializeSubtitleAreaDetection();
   } catch (error) {
-    console.error('Subtitle area detection controls failed to initialize', error);
+    console.error(window.I18n.t("subtitle.area.detection.controls.failed.to.initialize"), error);
   }
 })();

@@ -1,9 +1,9 @@
 {
   "baseline": "a447e7f6a63051459940255c443b3df92c05a24c",
   "files": {
-    "src/renderer/settings/settings.html": "e986f1df85bf234013acd6b0a7f45d6e47cdcb02",
-    "src/renderer/dictionary/dictionary.html": "7ceb6c4fbcd7fd372e4f20e8b3ddb4d29bb4e578",
-    "src/legacy/tool-window.css": "d5dfc560aaf8ecdb74fc3747f2b8684312b1ba50"
+    "src/renderer/settings/settings.html": "48efcb8c6e952e624a21b98869ea1688cbc2cbbe",
+    "src/renderer/dictionary/dictionary.html": "fe80c1add211da6963ffdeb6c86212b68a4756ad",
+    "src/renderer/shared/tool-window.css": "d5dfc560aaf8ecdb74fc3747f2b8684312b1ba50"
   },
-  "behaviorTests": "Renderer JavaScript is covered by test/unit/renderer; HTML and CSS retain the original visual baseline."
+  "behaviorTests": "Renderer JavaScript is covered by test/unit/renderer; HTML and CSS retain the original visual baseline. Only stylesheet paths changed during cleanup; CSS content is unchanged."
 }

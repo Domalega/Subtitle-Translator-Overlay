@@ -4,6 +4,7 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 const { createWorker } = require('tesseract.js');
 const { PNG } = require('pngjs');
+const { prepareSubtitleImage } = require('./services/subtitle-image-preprocessor');
 const { JsonFileStore } = require('./services/json-file-store');
 const { requestJson } = require('./services/request-json');
 const { cleanScreenOcrText } = require('../shared/ocr/text-utils');
@@ -56,7 +57,6 @@ let selectionWindow;
 let settingsWindow;
 let dictionaryWindow;
 let captureWindow;
-let translateWindow;
 let nearSourceWindow;
 let developerManualOcrZoneWindow;
 let developerAutomaticOcrZoneWindow;
@@ -93,7 +93,7 @@ const subtitleTrackingMetrics = { globalSearches: 0, totalSearchMs: 0, reacquire
 function createAppOcrWorker(language, oem, options) {
   return createWorker(language, oem, {
     ...options, gzip: false, cacheMethod: 'none',
-    langPath: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..'),
+    langPath: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', '..', 'resources', 'ocr'),
     ...(app.isPackaged ? { workerPath: path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js') } : {})
   });
 }
@@ -360,29 +360,7 @@ function clampArea(area, imageSize) {
 }
 
 function subtitleMaskToPng(image) {
-  const size = image.getSize();
-  const source = image.toBitmap();
-  const png = new PNG({ width: size.width, height: size.height });
-
-  for (let index = 0; index < size.width * size.height; index += 1) {
-    const sourceOffset = index * 4;
-    const targetOffset = index * 4;
-    const blue = source[sourceOffset];
-    const green = source[sourceOffset + 1];
-    const red = source[sourceOffset + 2];
-    const brightness = Math.max(red, green, blue);
-    const darkness = Math.min(red, green, blue);
-    const saturation = brightness - darkness;
-    const isSubtitlePixel = (brightness > 175 && saturation < 95) || (red >= 170 && green >= 115 && blue <= 170 && red >= blue + 40);
-    const value = isSubtitlePixel ? 255 : 0;
-
-    png.data[targetOffset] = value;
-    png.data[targetOffset + 1] = value;
-    png.data[targetOffset + 2] = value;
-    png.data[targetOffset + 3] = 255;
-  }
-
-  return PNG.sync.write(png);
+  return prepareSubtitleImage({ ...image.getSize(), data: image.toBitmap(), pixelOrder: 'bgra' });
 }
 
 function hasTextLikePixels(image) {
@@ -486,37 +464,6 @@ function createCaptureWindow() {
   captureWindow.on('closed', () => {
     captureWindow = null;
   });
-}
-
-function createTranslateWindow() {
-  if (translateWindow && !translateWindow.isDestroyed()) {
-    translateWindow.show();
-    translateWindow.focus();
-    return translateWindow;
-  }
-  translateWindow = new BrowserWindow({
-    width: 520,
-    height: 580,
-    minWidth: 380,
-    minHeight: 420,
-    frame: false,
-    alwaysOnTop: true,
-    resizable: true,
-    show: !UI_SMOKE,
-    title: 'Screen Translation',
-    parent: mainWindow,
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
-  translateWindow.setAlwaysOnTop(true, 'screen-saver');
-  translateWindow.loadFile(path.join(__dirname, '..', 'legacy', 'translate-window.html'));
-  translateWindow.on('closed', () => {
-    translateWindow = null;
-  });
-  return translateWindow;
 }
 
 function sendNearSourceState() {
@@ -870,7 +817,7 @@ app.whenReady().then(() => {
       console.log('UI smoke test: app ready.');
       require('../../test/integration/ui-smoke-checks').runUiSmokeTest({
         app, mainWindow, createToolWindow, createSelectionWindow, createCaptureWindow,
-        createTranslateWindow, createNearSourceWindow,
+        createNearSourceWindow,
         getSelectionWindow: () => selectionWindow, getCaptureWindow: () => captureWindow
       });
       return;
@@ -1526,10 +1473,6 @@ function loadUiSettings() {
 const uiSettingsStore = new JsonFileStore({ filePath: uiSettingsPath, defaults: defaultUiSettings, normalize: normalizeUiSettings });
 const gameSettingsStore = new JsonFileStore({ filePath: gameSettingsPath, defaults: defaultGameSettings,
   normalize: value => ({ ...defaultGameSettings, ...(value && typeof value === 'object' && !Array.isArray(value) ? value : {}) }) });
-
-handleIpc('open-translate-window', () => {
-  createTranslateWindow();
-});
 
 handleIpc('get-game-settings', () => loadGameSettings());
 

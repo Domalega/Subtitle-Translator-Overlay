@@ -37,8 +37,6 @@ test('selection and tool windows can close and reopen without losing their refer
   h.invoke('select-ocr-area'); h.invoke('cancel-ocr-area'); assert.equal(h.evaluate('selectionWindow'), null);
   h.invoke('select-ocr-area'); await h.invoke('complete-ocr-area', { x: 10, y: 20, width: 200, height: 50 });
   assert.equal(h.evaluate('selectionWindow'), null);
-  h.invoke('open-translate-window'); h.invoke('open-translate-window');
-  h.evaluate('translateWindow.close()'); assert.equal(h.evaluate('translateWindow'), null);
   h.invoke('open-settings-window'); h.evaluate('settingsWindow.close()');
   h.invoke('open-dictionary-window'); h.evaluate('dictionaryWindow.close()');
   h.invoke('set-game-mode-enabled', true); assert.equal(h.invoke('start-capture-translate'), true);

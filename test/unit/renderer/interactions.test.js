@@ -136,13 +136,3 @@ test('developer controls handle search, applying an area, diagnostics and stoppi
   h.events.onDeveloperStatus({ stage: 'OCR complete', trackerState: 'locked', lockedArea: { width: 500, height: 50 }, areaSource: 'automatic' });
   assert.match(h.document.getElementById('developerStatus').textContent, /locked/);
 });
-test('legacy translation window handles result, word chips and empty OCR', async t => {
-  const h = rendererHarness(t, 'legacy/translate-window.html', { dictionaryAdd: async () => ({ added: true }) });
-  await h.flush();
-  h.events.onTranslateResult({ original: 'Hello world', translation: 'Привет', words: [{ english: 'Hello' }] });
-  assert.equal(h.document.getElementById('translatedText').textContent, 'Привет');
-  h.document.querySelector('.chipAdd').click(); await h.flush();
-  assert.equal(h.document.querySelector('.chipAdd').textContent, '✓');
-  h.events.onTranslateResult(null);
-  assert.match(h.document.getElementById('originalText').textContent, /No English/);
-});

@@ -22,6 +22,10 @@ if (packageJson.main) {
   checkFile(packageJson.main, rootDir, 'package.json main');
 }
 
+for (const resource of packageJson.build?.extraResources || []) {
+  checkFile(typeof resource === 'string' ? resource : resource.from, rootDir, 'Packaged resource');
+}
+
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const files = [];

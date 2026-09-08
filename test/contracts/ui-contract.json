@@ -1,7 +1,7 @@
 {
   "settings": {
     "html": "src/renderer/settings/settings.html",
-    "css": ["../../legacy/tool-window.css"],
+    "css": ["../shared/tool-window.css"],
     "js": ["settings.js"],
     "elements": {
       "closeWindow": "button", "selectOcrArea": "button", "developerModeToggle": "checkbox",
@@ -16,7 +16,7 @@
   },
   "dictionary": {
     "html": "src/renderer/dictionary/dictionary.html",
-    "css": ["../../legacy/tool-window.css"],
+    "css": ["../shared/tool-window.css"],
     "js": ["../../shared/utils/dictionary-pagination.js", "dictionary.js"],
     "elements": {
       "closeWindow": "button", "dictionarySort": "select", "dictionarySearch": "search",

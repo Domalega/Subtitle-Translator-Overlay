@@ -1,6 +1,6 @@
 {
   "name": "subtitle-translation-overlay",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "license": "MIT",
   "productName": "Subtitle Translator Overlay",
@@ -35,8 +35,7 @@
       "node_modules/**/*"
     ],
     "asarUnpack": [
-      "node_modules/tesseract.js/**/*",
-      "node_modules/tesseract.js-core/**/*"
+      "node_modules/**/*"
     ],
     "asar": true,
     "win": {
@@ -48,7 +47,7 @@
     },
     "extraResources": [
       {
-        "from": "eng.traineddata",
+        "from": "resources/ocr/eng.traineddata",
         "to": "eng.traineddata"
       }
     ]

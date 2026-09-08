@@ -56,7 +56,6 @@ contextBridge.exposeInMainWorld('overlayApi', {
   startCaptureTranslate: () => ipcRenderer.invoke('start-capture-translate'),
   completeCaptureTranslate: (area) => ipcRenderer.invoke('complete-capture-translate', area),
   cancelCaptureTranslate: () => ipcRenderer.invoke('cancel-capture-translate'),
-  openTranslateWindow: () => ipcRenderer.invoke('open-translate-window'),
   setGameModeEnabled: (enabled) => ipcRenderer.invoke('set-game-mode-enabled', enabled),
   getUiSettings: () => ipcRenderer.invoke('get-ui-settings'),
   setGameHotkey: (accelerator) => ipcRenderer.invoke('set-game-hotkey', accelerator),

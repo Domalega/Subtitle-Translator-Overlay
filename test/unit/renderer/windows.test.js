@@ -42,7 +42,7 @@ test('late Game mode result cannot replace normal OCR output', async t => {
   assert.equal(h.document.getElementById('englishText').textContent, before);
 });
 test('all renderer pages load their scripts and expose the expected controls', async t => {
-  for (const page of ['renderer/main/index.html', 'renderer/settings/settings.html', 'renderer/dictionary/dictionary.html', 'renderer/capture/select.html', 'renderer/capture/capture-select.html', 'legacy/translate-window.html', 'renderer/overlays/near-source/near-source-overlay.html', 'renderer/overlays/developer-zone/developer-ocr-zone.html', 'renderer/overlays/developer-zone/developer-subtitle-candidate.html']) {
+  for (const page of ['renderer/main/index.html', 'renderer/settings/settings.html', 'renderer/dictionary/dictionary.html', 'renderer/capture/select.html', 'renderer/capture/capture-select.html', 'renderer/overlays/near-source/near-source-overlay.html', 'renderer/overlays/developer-zone/developer-ocr-zone.html', 'renderer/overlays/developer-zone/developer-subtitle-candidate.html']) {
     const h = rendererHarness(t, page);
     await h.flush();
     assert.equal(h.errors.length, 0, page);

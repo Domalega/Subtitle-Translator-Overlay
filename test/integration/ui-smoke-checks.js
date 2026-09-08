@@ -1,5 +1,5 @@
 'use strict';
-async function runUiSmokeTest({ app, mainWindow, createToolWindow, createSelectionWindow, createCaptureWindow, createTranslateWindow, createNearSourceWindow, getSelectionWindow, getCaptureWindow }) {
+async function runUiSmokeTest({ app, mainWindow, createToolWindow, createSelectionWindow, createCaptureWindow, createNearSourceWindow, getSelectionWindow, getCaptureWindow }) {
   let settingsWindow, dictionaryWindow;
 
   console.log('UI smoke test: loading windows.');
@@ -105,7 +105,7 @@ async function runUiSmokeTest({ app, mainWindow, createToolWindow, createSelecti
     if (!dictionaryResult.list || !dictionaryResult.context || !dictionaryResult.visible || dictionaryResult.sort !== 'alpha-asc') reportFailure(`Dictionary controls failed: ${JSON.stringify(dictionaryResult)}`);
 
     for (const create of [createSelectionWindow, createCaptureWindow]) create();
-    const extraWindows = [getSelectionWindow(), getCaptureWindow(), createTranslateWindow(), createNearSourceWindow()];
+    const extraWindows = [getSelectionWindow(), getCaptureWindow(), createNearSourceWindow()];
     for (const window of extraWindows) {
       watchWindow(window, 'auxiliary');
       const result = await evaluate(window, '({ bridge: Boolean(window.overlayApi), body: Boolean(document.body), node: typeof require, scripts: document.scripts.length })', 'auxiliary');

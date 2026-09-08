@@ -64,7 +64,8 @@ test('OCR mask preserves yellow subtitle pixels', t => {
   const h = mainHarness(t);
   h.context.testImage = makeImage(1, 1, Buffer.from([20, 190, 255, 255]));
   const png = PNG.sync.read(h.evaluate('subtitleMaskToPng(testImage)'));
-  assert.equal(png.data[0], 255);
+  assert.equal(png.data[(10 * png.width + 10) * 4], 0);
+  assert.equal(png.data[0], 255); // white border
 });
 test('window controls reuse tool windows and reject invalid sizes and positions', async t => {
   const h = mainHarness(t);

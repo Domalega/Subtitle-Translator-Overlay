@@ -2,8 +2,16 @@ name: Windows CI
 
 on:
   push:
+    branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release-tag:
+        description: Expected release tag; empty for a regular build.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -32,6 +40,13 @@ jobs:
           node-version: '24.18.0'
           cache: npm
           cache-dependency-path: package-lock.json
+
+      - name: Validate release version
+        if: ${{ inputs.release-tag != '' }}
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          node -e "const p = require('./package.json'); const l = require('./package-lock.json'); const tag = process.env.RELEASE_TAG; if (tag !== 'v' + p.version || l.version !== p.version || l.packages[''].version !== p.version) throw new Error('Release tag and package versions must match: ' + tag);"
 
       - name: Install dependencies
         run: npm ci

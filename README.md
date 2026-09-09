@@ -83,11 +83,20 @@ The retired translation window is no longer part of the application.
 
 ## Windows CI
 
-[Windows CI](.github/workflows/windows-ci.yml) runs on GitHub Actions for pushes, pull requests and manual dispatches, using Windows Server 2025 x64 and Node.js 24.18.0.
+[Windows CI](.github/workflows/windows-ci.yml) runs on GitHub Actions for branch pushes, pull requests and manual dispatches, using Windows Server 2025 x64 and Node.js 24.18.0.
 
 It installs locked dependencies with `npm ci`, then runs `npm run build -- --publish never`. The build's `prebuild` hook runs the complete `verify` suite once, including coverage thresholds, Electron UI and offline OCR smoke tests. A separate smoke test uses the packaged executable to check the shipped OCR modules, worker, WASM and language model.
 
 The run uploads `windows-coverage` (also after a later failure when coverage exists) and, after successful checks, `windows-portable`. Artifacts are retained for 14 days; no GitHub release is published. Live playback and physical monitor/DPI behavior still need manual testing.
+
+## Release Build
+
+[Release Build](.github/workflows/release-build.yml) reuses the Windows CI build, full verification and packaged OCR checks.
+
+- **Build without publishing:** open GitHub Actions → Release Build → Run workflow, select a branch or tag, then download `windows-portable` from the completed run. Manual runs never publish a release.
+- **Publish a release:** update `package.json` and `package-lock.json` to the intended version, merge the changes, then create and push the matching tag (for example, `v0.2.3` for version `0.2.3`). A `v*` tag push builds that tagged commit and publishes a GitHub Release with the portable EXE, `SHA256SUMS.txt` and generated release notes. Prerelease versions such as `v0.2.3-beta.1` are marked as prereleases.
+
+Tag and package versions must match. Publication runs only after all checks pass, using the built-in GitHub token; no personal token is needed. An existing release is not overwritten: a repeated publication fails. Executables remain unsigned. The ordinary Windows CI skips tag pushes to avoid building each release twice.
 
 ## Usage
 

@@ -81,6 +81,14 @@ The retired translation window is no longer part of the application.
 - `npm run build`: build a portable Windows package.
 - `npm run dist`: build the configured Windows distribution target.
 
+## Windows CI
+
+[Windows CI](.github/workflows/windows-ci.yml) runs on GitHub Actions for pushes, pull requests and manual dispatches, using Windows Server 2025 x64 and Node.js 24.18.0.
+
+It installs locked dependencies with `npm ci`, then runs `npm run build -- --publish never`. The build's `prebuild` hook runs the complete `verify` suite once, including coverage thresholds, Electron UI and offline OCR smoke tests. A separate smoke test uses the packaged executable to check the shipped OCR modules, worker, WASM and language model.
+
+The run uploads `windows-coverage` (also after a later failure when coverage exists) and, after successful checks, `windows-portable`. Artifacts are retained for 14 days; no GitHub release is published. Live playback and physical monitor/DPI behavior still need manual testing.
+
 ## Usage
 
 1. Launch with `npm start` or `Start Subtitle Overlay.cmd`.

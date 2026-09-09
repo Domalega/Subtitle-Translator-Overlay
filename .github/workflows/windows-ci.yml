@@ -1,0 +1,70 @@
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Verify and package (Windows x64)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # prebuild runs the full verify suite exactly once before packaging.
+      - name: Verify and build portable executable
+        run: npm run build -- --publish never
+
+      - name: Test packaged OCR
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+        run: |
+          $app = Join-Path $PWD 'dist/win-unpacked/Subtitle Translator Overlay.exe'
+          $smoke = Join-Path $PWD 'test/integration/packaged-ocr-smoke.js'
+          $resources = Join-Path $PWD 'dist/win-unpacked/resources'
+          if (!(Test-Path -LiteralPath $app)) { throw "Packaged executable missing: $app" }
+          $process = Start-Process -FilePath $app -ArgumentList @('"' + $smoke + '"', '"' + $resources + '"') -NoNewWindow -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged OCR smoke failed: $($process.ExitCode)" }
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() && hashFiles('coverage/index.html') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-coverage
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload portable executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-portable
+          path: dist/Subtitle-Translator-Overlay-*.exe
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error

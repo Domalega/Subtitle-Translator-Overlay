@@ -3,6 +3,7 @@ const storage = {
   setItem(key, value) { try { localStorage.setItem(key, value); } catch (_) {} },
   removeItem(key) { try { localStorage.removeItem(key); } catch (_) {} }
 };
+const translationCache = new window.TranslationCacheModule.TranslationCache((() => { try { return window.localStorage; } catch (_) { return null; } })());
 const playPauseButton = document.getElementById('playPause');
 const ocrOnceButton = document.getElementById('ocrOnce');
 const addWordButton = document.getElementById('addWord');
@@ -27,9 +28,6 @@ let isRunning = false;
 let tickHandle = null;
 let isOcrRunning = false;
 let hasOcrArea = false;
-let ocrTranslationCache = new Map();
-const OCR_CACHE_MAX = 500;
-let ocrCacheInsertOrder = [];
 const CANDIDATE_TIMEOUT_MS = 180;
 const EMPTY_FRAME_THRESHOLD = 3;
 const HOLD_CLEAR_MS = 1200;
@@ -74,12 +72,12 @@ function findCueIndex(time) {
 async function translate(text, options = {}) {
   const revision = targetLanguageRevision;
   const cacheKey = cachePrefix + targetLanguage + ':' + text;
-  const cached = options.scope ? null : storage.getItem(cacheKey);
+  const cached = options.scope ? null : translationCache.getItem(cacheKey);
   if (cached) return cached;
 
   const translated = await window.overlayApi.translate(text, options.scope);
   if (revision !== targetLanguageRevision) throw new Error('Translation language changed');
-  if (!options.scope) storage.setItem(cacheKey, translated);
+  if (!options.scope) translationCache.setItem(cacheKey, translated);
   return translated;
 }
 
@@ -178,30 +176,12 @@ function setRunning(nextRunning) {
 }
 
 function getCachedTranslation(normalizedKey) {
-  if (ocrTranslationCache.has(normalizedKey)) return ocrTranslationCache.get(normalizedKey);
-  const localKey = 'ocr-norm-' + targetLanguage + ':' + normalizedKey;
-  const cached = storage.getItem(localKey);
-  if (cached) {
-    setCachedTranslation(normalizedKey, cached);
-    return cached;
-  }
-  return null;
+  return translationCache.getItem('ocr-norm-' + targetLanguage + ':' + normalizedKey);
 }
 
 function setCachedTranslation(normalizedKey, translation) {
-  if (!normalizedKey || normalizedKey.length < 3) return;
-  if (!/[a-zA-Z]/.test(normalizedKey)) return;
-  if (!translation) return;
-  if (!ocrTranslationCache.has(normalizedKey)) {
-    ocrCacheInsertOrder.push(normalizedKey);
-    if (ocrCacheInsertOrder.length > OCR_CACHE_MAX) {
-      const oldest = ocrCacheInsertOrder.shift();
-      ocrTranslationCache.delete(oldest);
-      try { storage.removeItem('ocr-norm-' + targetLanguage + ':' + oldest); } catch (_) {}
-    }
-  }
-  ocrTranslationCache.set(normalizedKey, translation);
-  try { storage.setItem('ocr-norm-' + targetLanguage + ':' + normalizedKey, translation); } catch (_) {}
+  if (!normalizedKey || normalizedKey.length < 3 || !/[a-zA-Z]/.test(normalizedKey)) return;
+  translationCache.setItem('ocr-norm-' + targetLanguage + ':' + normalizedKey, translation);
 }
 
 function stopOcr(message = window.I18n.t("screen.ocr.stopped")) {
@@ -467,7 +447,7 @@ function applyTargetLanguage(value) {
   const revision=targetLanguageRevision, original=englishTextElement.textContent;
   const wasRunning=isOcrRunning;
   screenOcrCoordinator.stop();
-  ocrTranslationCache.clear(); ocrCacheInsertOrder=[];
+  // Cache keys include the target language; pending results are retired below.
   manualTranslationRequestId++; retranslateButton.disabled=false;
   if(snapshot) snapshot.russian='';
   if(editSnapshot) editSnapshot.russian='';

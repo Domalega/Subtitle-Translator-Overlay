@@ -117,6 +117,7 @@
       "../../shared/output/output-router.js",
       "../../shared/ocr/latest-frame-queue.js",
       "../../shared/ocr/screen-ocr-coordinator.js",
+      "../../shared/translation-cache.js",
       "renderer.js"
     ],
     "elements": {

@@ -1,6 +1,6 @@
 # Architecture
 
-This describes the current 0.2.2 source. See [working rules](../AGENTS.md) for development and verification policy and the [README](../README.md) for user-facing setup.
+This describes the current 0.2.3 source. See [working rules](../AGENTS.md) for development and verification policy and the [README](../README.md) for user-facing setup.
 
 ## Main Process
 
@@ -22,18 +22,18 @@ The main process keeps `contextIsolation` enabled and `nodeIntegration` disabled
 
 `src/preload.js` exposes the `window.overlayApi` bridge through `contextBridge`.
 
-Methods use `ipcRenderer.invoke()`. Event subscriptions strip the Electron event object and return an unsubscribe function. Main handlers validate the owning window, top frame and local renderer URL; renderer navigation and popups are blocked.
+Methods use `ipcRenderer.invoke()`. Event subscriptions strip the Electron event object and return an unsubscribe function. The shared registration helper in `src/main/services/ipc-handler.js` makes main handlers validate the owning window, top frame and local renderer URL; renderer navigation and popups are blocked.
 
 ## Renderer
 
 `src/renderer/main/renderer.js` owns the main overlay UI wiring. Pure text logic, subtitle stabilization, output rendering, and OCR coordination are separated into browser-loadable modules under `src/shared/`:
 
-- `text-utils.js`
-- `subtitle-stabilizer.js`
-- `main-panel-output.js`
-- `screen-ocr-coordinator.js`
-- `output-router.js`
-- `near-source-output.js`
+- `ocr/text-utils.js`
+- `ocr/subtitle-stabilizer.js`
+- `output/main-panel-output.js`
+- `ocr/screen-ocr-coordinator.js`
+- `output/output-router.js`
+- `output/near-source-output.js`
 
 These modules do not require Electron and can be tested with `node:test`.
 
@@ -47,7 +47,7 @@ These modules do not require Electron and can be tested with `node:test`.
 
 ## Screen OCR Flow
 
-1. The user selects an OCR area directly from the main window or Translation settings.
+1. The user selects a manual OCR area or starts automatic subtitle-area detection. Manual selection takes priority; automatic tracking can reacquire and adapt its area.
 2. `src/renderer/capture/select.html` sends `complete-ocr-area` through preload.
 3. Main stores the selected OCR area and broadcasts `ocr-area-changed`.
 4. The main overlay enables one-shot read and continuous translation behavior through `ScreenOcrCoordinator`.
@@ -56,6 +56,8 @@ These modules do not require Electron and can be tested with `node:test`.
 7. `SubtitleStabilizer` filters empty OCR, OCR noise, duplicate subtitles, similar subtitles, and growing candidates.
 8. Accepted candidates are translated through the existing `translate` IPC path.
 9. `MainPanelOutput` updates the translated result and expandable English original.
+
+The automatic path uses the subtitle-area detector, candidate validator, tracker and adapter under `src/shared/ocr/`. Coordinate conversion is handled by `ocr-area-coordinates.js`; saved manual coordinates and automatic display/capture metadata are kept separate.
 
 ## Near-Source Overlay
 
@@ -69,18 +71,9 @@ The overlay renderer uses `textContent`, measures its card on `requestAnimationF
 
 `ocrAnchorBoundsDip` is separate: main adds `display.bounds` to local DIP coordinates and uses it only for BrowserWindow placement. BrowserWindow bounds and `display.workArea` are DIP. This stage targets the primary monitor; it does not claim complete multi-monitor or DPI crop support. Without an anchor, near-source mode asks the user to select the OCR area again rather than guessing.
 
-## Game Mode Flow
+## One-shot capture flow
 
-1. The user enables `Game mode` in the main window.
-2. Renderer calls `set-game-mode-enabled`.
-3. The global Game mode hotkey opens `src/renderer/capture/capture-select.html`.
-4. The selected capture area is sent with `complete-capture-translate`.
-5. Main runs Game OCR and translation.
-6. Main sends `capture-result` to the main overlay window.
-7. Renderer displays the Game mode result in the main window.
-
-Game mode outputs to the main overlay.
-Near-source overlay is hidden while Game mode is enabled and capture results never route to it.
+The Translate an area action (or its global shortcut) opens the capture selection window. Main recognizes the selected image and translates it, then sends the result to the main panel. The near-source overlay is hidden while this action owns the output. Internal game-mode names remain for compatibility; there is no user-facing Game mode switch.
 
 ## Developer Diagnostics
 
@@ -100,6 +93,8 @@ Main uses `TranslationService` for the current Google Translate endpoint:
 - normalized translation errors.
 
 Renderer keeps using the existing preload IPC methods. Screen OCR, manual retranslate, and one-shot captures use separate translation scopes so they do not cancel each other accidentally.
+
+The renderer uses `src/shared/translation-cache.js` for manual and OCR translations together. Keys include the target language. On startup and every insertion it limits the cache to 500 entries and 1 MiB of estimated UTF-16 key/value payload, including entries from previous launches and languages. Old entries are evicted in storage enumeration order on startup and insertion order during the session. Browser metadata overhead is not included. Storage failures leave a bounded in-memory cache; unrelated settings are never removed.
 
 ## Settings Flow
 
@@ -202,3 +197,5 @@ See [UI design and extension points](ui-design.md) for the two-action workflow, 
 ### Translation language
 
 `targetLanguage` is saved with UI settings (default `ru`). A locale change atomically saves both `locale` and `targetLanguage`; target changes alone preserve the locale. Main-process translation routes read the saved target, map `zh` to `zh-CN`, and reject results started before a target change. Renderer caches include the target; the OCR coordinator restarts on changes to retire pending results. OCR remains English-only; English as target returns the source. Dictionary entries preserve `targetLanguage` (legacy entries are Russian); the legacy `russian` property stores translated text for backward compatibility.
+
+See [OCR performance baseline](performance-baseline.md) for the repeatable offline benchmark and outstanding live-playback acceptance.

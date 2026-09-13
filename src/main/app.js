@@ -36,18 +36,8 @@ app.on('web-contents-created', (_event, contents) => {
   contents.on('will-navigate', event => event.preventDefault());
 });
 
-function handleIpc(channel, handler) {
-  ipcMain.handle(channel, (event, ...args) => {
-    const owner = BrowserWindow.fromWebContents(event.sender);
-    const frame = event.senderFrame;
-    if (!owner || owner.isDestroyed() || !frame || frame !== event.sender.mainFrame) throw new Error('Untrusted IPC sender');
-    let file;
-    try { file = require('node:url').fileURLToPath(frame.url); } catch (_) { throw new Error('Untrusted IPC sender'); }
-    const relative = path.relative(path.join(__dirname, '..'), file);
-    if (relative.startsWith('..') || path.isAbsolute(relative) || path.extname(relative) !== '.html') throw new Error('Untrusted IPC sender');
-    return handler(event, ...args);
-  });
-}
+const { createIpcHandler } = require('./services/ipc-handler');
+const handleIpc = createIpcHandler({ ipcMain, BrowserWindow, sourceRoot: path.join(__dirname, '..') });
 
 app.disableHardwareAcceleration();
 const singleInstanceLock = app.requestSingleInstanceLock();

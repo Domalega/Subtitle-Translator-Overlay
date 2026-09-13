@@ -75,11 +75,14 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      - name: Upload portable executable
+      - name: Verify licenses and prepare release documents
+        run: ./scripts/prepare-release.ps1
+
+      - name: Upload portable executable and license documents
         uses: actions/upload-artifact@v7
         with:
           name: windows-portable
-          path: dist/Subtitle-Translator-Overlay-*.exe
+          path: dist/release/*
           retention-days: 14
           compression-level: 0
           if-no-files-found: error

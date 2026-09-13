@@ -1,8 +1,8 @@
 {
-  "baseline": "approved-two-theme-ui-redesign",
+  "baseline": "translation-language-settings",
   "files": {
-    "src/renderer/settings/settings.html": "ef44487b5fd10d120889fb094dce1fbd778399d6",
-    "src/renderer/dictionary/dictionary.html": "bb2a17c671475e140e1cf6ddd51cdeb80b11f738",
+    "src/renderer/settings/settings.html": "88612c7148b3b8818936286fd681abf56be69371",
+    "src/renderer/dictionary/dictionary.html": "faf69433b427d2f65d1e6faf363a4cdf3a74769d",
     "src/renderer/shared/tool-window.css": "c37af9ed243d32e31921a971c440892c91972c01"
   },
   "behaviorTests": "Behavior tests cover translation capture, settings persistence and dictionary interactions. The baseline records the redesigned settings and dictionary layout."

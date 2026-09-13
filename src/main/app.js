@@ -411,6 +411,7 @@ function createToolWindow(fileName, title, width, height) {
   }
 
   const toolWindow = new BrowserWindow({
+    icon: path.join(__dirname, '..', 'assets', 'app.ico'),
     width,
     height,
     minWidth: 360,
@@ -601,7 +602,7 @@ async function runCaptureTranslate(area) {
       return;
     }
 
-    const translation = await translateText(text, 'en', 'ru', 'game');
+    const translation = await translateToSelectedLanguage(text, 'game');
     if (requestId !== gameRequestId || !gameModeEnabled) return false;
 
     const wordEntries = words.map((w) => ({
@@ -662,6 +663,7 @@ async function refreshDictionaryCache() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
+    icon: path.join(__dirname, '..', 'assets', 'app.ico'),
     width: 980,
     height: 360,
     minWidth: 620,
@@ -771,7 +773,20 @@ function restoreMainWindow() {
   mainWindow.webContents.send('window-restored');
 }
 
+let translationLanguageRevision = 0;
+function invalidateTranslationLanguage() {
+  translationLanguageRevision++;
+  for (const scope of ['screen-ocr','game','manual','language-change']) translationService.abortScope(scope);
+}
+async function translateToSelectedLanguage(text, scope = null) {
+  const revision = translationLanguageRevision;
+  const language = loadUiSettings().targetLanguage;
+  const result = language === 'en' ? String(text || '') : await translateText(text, 'en', language === 'zh' ? 'zh-CN' : language, scope);
+  if (revision !== translationLanguageRevision) throw new Error('Translation language changed');
+  return result;
+}
 async function translateText(text, sourceLanguage, targetLanguage, scope = null) {
+  if (sourceLanguage===targetLanguage) return String(text || '');
   return translationService.translate(text, sourceLanguage, targetLanguage, scope ? { scope } : {});
 }
 
@@ -916,13 +931,20 @@ handleIpc('close-current-window', (event) => {
 
 handleIpc('set-ui-setting', async (_event, key, value) => {
   if (typeof key !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key)) return false;
-  const normalized = await uiSettingsStore.update(settings => ({ ...settings, [key]: value }));
+  if (['locale','targetLanguage'].includes(key) && !['en','ru','zh','hi','es'].includes(value)) return false;
+  let previousTarget;
+  const normalized = await uiSettingsStore.update(settings => { previousTarget=settings.targetLanguage; return { ...settings, [key]: value, ...(key === 'locale' ? {targetLanguage:value} : {}) }; });
+  if (previousTarget !== normalized.targetLanguage) invalidateTranslationLanguage();
   updateNearSourceSettings(normalized);
   if (key === 'developerMode' || key === 'theme') {
     updateDeveloperOcrZone(normalized);
     updateDeveloperSubtitleCandidateZone(normalized);
   }
   if (!['overlay', 'both'].includes(normalized.displayMode)) hideNearSourceOverlay();
+  if (key === 'locale') {
+    for (const win of [mainWindow,settingsWindow,dictionaryWindow]) win?.webContents.send('apply-ui-settings', normalized);
+    return true;
+  }
   const appliedValue = normalized[key];
   mainWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
   settingsWindow?.webContents.send('apply-ui-setting', { key, value: appliedValue });
@@ -980,7 +1002,7 @@ handleIpc('cancel-ocr-area', () => {
 });
 
 handleIpc('translate', async (_event, text, scope) => {
-  return translateText(text, 'en', 'ru', scope || null);
+  return translateToSelectedLanguage(text, scope || null);
 });
 
 handleIpc('translate-text', async (_event, text, sourceLanguage, targetLanguage, scope) => {
@@ -1000,11 +1022,12 @@ handleIpc('dictionary-add', async (_event, entry) => {
       (entry.russian != null && typeof entry.russian !== 'string')) throw new Error('Invalid dictionary entry');
   const english = entry.english.trim();
   const russian = (entry.russian || '').trim();
+  const targetLanguage = ['en','ru','zh','hi','es'].includes(entry.targetLanguage) ? entry.targetLanguage : 'ru';
   let result;
   await dictionaryStore.update(entries => {
-    const duplicate = entries.some(item => (item.english || item.sourceText || '').trim().toLowerCase() === english.toLowerCase());
+    const duplicate = entries.some(item => (item.english || item.sourceText || '').trim().toLowerCase() === english.toLowerCase() && (item.targetLanguage || 'ru') === targetLanguage);
     if (duplicate) { result = { added: false, duplicate: true }; return entries; }
-    const nextEntry = { ...entry, english, russian, id: require('node:crypto').randomUUID(), addedAt: Date.now() };
+    const nextEntry = { ...entry, english, russian, targetLanguage, id: require('node:crypto').randomUUID(), addedAt: Date.now() };
     result = { added: true, entry: nextEntry };
     return [...entries, nextEntry];
   });
@@ -1019,7 +1042,8 @@ handleIpc('dictionary-delete', async (_event, id) => {
   return { success: true };
 });
 
-handleIpc('get-context-sentences', async (_event, word) => {
+handleIpc('get-context-sentences', async (_event, word, targetLanguage) => {
+  const contextLanguage = ['en','ru','zh','hi','es'].includes(targetLanguage) ? targetLanguage : loadUiSettings().targetLanguage;
   const normalizedWord = String(word || '').toLowerCase().replace(/[^a-z'-]/g, '').trim();
   if (!normalizedWord) return [];
 
@@ -1041,7 +1065,7 @@ handleIpc('get-context-sentences', async (_event, word) => {
                   if (definition.example && sentences.length < maxCount) {
                     const example = definition.example.trim();
                     if (example.length > 10 && !addedExamples.has(example)) {
-                      const translated = await translateText(example, 'en', 'ru');
+                      const translated = await translateText(example, 'en', contextLanguage==='zh'?'zh-CN':contextLanguage);
                       sentences.push({ english: example, russian: translated });
                       addedExamples.add(example);
                     }
@@ -1069,7 +1093,7 @@ handleIpc('get-context-sentences', async (_event, word) => {
 
   const fallbackSentences = [];
   for (const template of templates) {
-    const translated = await translateText(template, 'en', 'ru');
+    const translated = await translateText(template, 'en', contextLanguage==='zh'?'zh-CN':contextLanguage);
     fallbackSentences.push({ english: template, russian: translated });
   }
 
@@ -1090,15 +1114,16 @@ handleIpc('export-dictionary', async (_event, entries, format) => {
   const filePath = result.filePath;
 
   if (format === 'csv') {
-    const header = 'Word,Translation,Transcription,Date\n';
+    const header = 'Word,Translation,Transcription,Date,TargetLanguage\n';
     const rows = entries.map(e =>
-      `"${(e.english || e.sourceText || '').replace(/"/g, '""')}","${(e.russian || '').replace(/"/g, '""')}","${(e.transcription || '').replace(/"/g, '""')}","${e.addedAt ? new Date(e.addedAt).toISOString().slice(0, 10) : ''}"`
+      `"${(e.english || e.sourceText || '').replace(/"/g, '""')}","${(e.russian || '').replace(/"/g, '""')}","${(e.transcription || '').replace(/"/g, '""')}","${e.addedAt ? new Date(e.addedAt).toISOString().slice(0, 10) : ''}","${['en','ru','zh','hi','es'].includes(e.targetLanguage) ? e.targetLanguage : 'ru'}"`
     ).join('\n');
     await fs.writeFile(filePath, '\uFEFF' + header + rows, 'utf8');
   } else {
     await fs.writeFile(filePath, JSON.stringify(entries.map(e => ({
       word: e.english || e.sourceText,
       translation: e.russian,
+      targetLanguage: e.targetLanguage || 'ru',
       transcription: e.transcription,
       date: e.addedAt ? new Date(e.addedAt).toISOString().slice(0, 10) : ''
     })), null, 2), 'utf8');
@@ -1568,9 +1593,10 @@ handleIpc('restore-window-size', async () => {
 handleIpc('reset-ui-settings', async () => {
   const previous = currentGameHotkey;
   if (!registerGameHotkey(DEFAULT_UI_SETTINGS.hotkey)) throw new Error('The default shortcut is already in use.');
-  let settings;
-  try { settings = await uiSettingsStore.update(saved => ({ ...saved, ...DEFAULT_UI_SETTINGS })); }
+  let settings, previousTarget;
+  try { settings = await uiSettingsStore.update(saved => { previousTarget=saved.targetLanguage; return { ...saved, ...DEFAULT_UI_SETTINGS }; }); }
   catch(error) { registerGameHotkey(previous); throw error; }
+  if(previousTarget !== settings.targetLanguage) invalidateTranslationLanguage();
   updateNearSourceSettings(settings); updateDeveloperOcrZone(settings); updateDeveloperSubtitleCandidateZone(settings);
   for (const win of [mainWindow,settingsWindow,dictionaryWindow]) if(win && !win.isDestroyed()) win.webContents.send('apply-ui-settings', settings);
   return settings;

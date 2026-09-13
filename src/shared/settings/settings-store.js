@@ -6,6 +6,7 @@
   const DEFAULT_UI_SETTINGS = Object.freeze({
     theme: 'dark',
     locale: 'en',
+    targetLanguage: 'ru',
     fontScale: 100,
     windowWidth: 980,
     windowHeight: 360,
@@ -37,7 +38,8 @@
     const merged = { ...source };
 
     merged.theme = Themes.normalizeId(source.theme);
-    merged.locale = 'en';
+    merged.locale = ['en', 'ru', 'zh', 'hi', 'es'].includes(source.locale) ? source.locale : DEFAULT_UI_SETTINGS.locale;
+    merged.targetLanguage = ['en', 'ru', 'zh', 'hi', 'es'].includes(source.targetLanguage) ? source.targetLanguage : DEFAULT_UI_SETTINGS.targetLanguage;
     merged.font = FONTS.has(source.font) ? source.font : DEFAULT_UI_SETTINGS.font;
     merged.fontScale = clampNumber(source.fontScale, DEFAULT_UI_SETTINGS.fontScale, 70, 150);
     merged.windowWidth = clampNumber(source.windowWidth, DEFAULT_UI_SETTINGS.windowWidth, 620, 1500);

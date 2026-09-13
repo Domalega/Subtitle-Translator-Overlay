@@ -7,3 +7,6 @@
 *.cmd text eol=crlf
 .gitignore text eol=lf
 .gitattributes text eol=lf
+# Preserve whitespace in verbatim upstream license texts.
+licenses/*.txt text eol=lf whitespace=-blank-at-eol,-blank-at-eof
+THIRD_PARTY_NOTICES.txt text eol=lf

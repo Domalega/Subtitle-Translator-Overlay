@@ -1,6 +1,7 @@
 (() => {
   const api = window.overlayApi;
   window.Appearance = { apply(settings) {
+    if(settings.locale !== undefined) window.applyInterfaceLocale(settings.locale);
     if(settings.theme) window.Themes.apply(document,settings.theme);
     if(settings.font) document.body.style.fontFamily=({system:'"Segoe UI", Arial, sans-serif',inter:'Inter, "Segoe UI", sans-serif','segoe ui':'"Segoe UI", sans-serif',arial:'Arial, sans-serif',consolas:'Consolas, monospace','jetbrains mono':'"JetBrains Mono", Consolas, monospace','dot matrix':'Consolas, monospace'})[settings.font] || '"Segoe UI", Arial, sans-serif';
   } };

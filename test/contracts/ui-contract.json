@@ -6,6 +6,7 @@
       "../shared/tool-window.css"
     ],
     "js": [
+      "../../shared/ui/locales/translations.js",
       "../../shared/ui/locales/en.js",
       "../../shared/ui/i18n.js",
       "../shared/localize.js",
@@ -46,7 +47,9 @@
       "status": "div",
       "resetModal": "div",
       "cancelReset": "button",
-      "confirmReset": "button"
+      "confirmReset": "button",
+      "localeSelect": "select",
+      "targetLanguageSelect": "select"
     }
   },
   "dictionary": {
@@ -56,6 +59,7 @@
       "../shared/tool-window.css"
     ],
     "js": [
+      "../../shared/ui/locales/translations.js",
       "../../shared/ui/locales/en.js",
       "../../shared/ui/i18n.js",
       "../shared/localize.js",
@@ -100,6 +104,7 @@
       "styles.css"
     ],
     "js": [
+      "../../shared/ui/locales/translations.js",
       "../../shared/ui/locales/en.js",
       "../../shared/ui/i18n.js",
       "../shared/localize.js",

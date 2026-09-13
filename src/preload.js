@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('overlayApi', {
   dictionaryGet: () => ipcRenderer.invoke('dictionary-get'),
   dictionaryAdd: (entry) => ipcRenderer.invoke('dictionary-add', entry),
   dictionaryDelete: (id) => ipcRenderer.invoke('dictionary-delete', id),
-  getContextSentences: (word) => ipcRenderer.invoke('get-context-sentences', word),
+  getContextSentences: (word, targetLanguage) => ipcRenderer.invoke('get-context-sentences', word, targetLanguage),
   exportDictionary: (entries, format) => ipcRenderer.invoke('export-dictionary', entries, format),
   captureScreenSubtitleFrame: (captureMode) => ipcRenderer.invoke('capture-screen-subtitle-frame', captureMode === 'manual' ? 'manual' : 'automatic'),
   recognizeScreenSubtitleFrame: (frame) => {

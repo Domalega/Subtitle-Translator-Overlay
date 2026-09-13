@@ -51,3 +51,5 @@ window.addEventListener('mouseup', (event) => {
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') window.overlayApi.cancelOcrArea();
 });
+
+window.overlayApi.getUiSettings().then(settings => window.applyInterfaceLocale(settings.locale)).catch(() => {});

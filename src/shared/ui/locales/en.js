@@ -1,5 +1,6 @@
 (function(root,factory) { const messages=factory(); if(typeof module==='object'&&module.exports) module.exports=messages; if(root) root.EnglishMessages=messages; })(typeof globalThis!=='undefined'?globalThis:this,function() {
 return {
+  "interface.language": "Interface language",
   "theme.dark": "Dark",
   "theme.light": "Light",
   "capture.area": "Capture Area",
@@ -40,7 +41,7 @@ return {
   "minimize.window": "Minimize window",
   "quit.application": "Quit application",
   "translate.what.you.watch": "Translate what you watch",
-  "choose.the.english.subtitle.area.then.start.translating.into.russ": "Choose the English subtitle area, then start translating into Russian.",
+  "choose.the.english.subtitle.area.then.start.translating.into.russ": "Choose the English subtitle area, then start translating into your selected language.",
   "choose.subtitle.area": "Choose subtitle area",
   "translate.an.area": "Translate an area",
   "no.subtitle.area.selected": "No subtitle area selected",
@@ -121,7 +122,7 @@ return {
   "add.words.before.starting.a.review": "Add words before starting a review.",
   "dictionary.exported": "Dictionary exported",
   "could.not.export": "Could not export: ",
-  "select.a.word.in.english.or.russian.subtitles.first": "Select a word in English or Russian subtitles first",
+  "select.a.word.in.english.or.russian.subtitles.first": "Select a word in the original or translated text first",
   "adding.word": "Adding word...",
   "this.word.is.already.in.dictionary": "This word is already in dictionary",
   "translation.unavailable": "Translation unavailable",
@@ -183,6 +184,8 @@ return {
   "word.delete.label": "Delete {word}",
   "word.delete.question": "Delete “{word}” from your dictionary?",
   "review.progress": "Word {current} of {total}",
-  "settings.sections": "Settings sections"
+  "settings.sections": "Settings sections",
+  "translation.language": "Translation language",
+  "translation.language.hint": "Changing the interface language also sets the translation language. English shows the original text."
 };
 });

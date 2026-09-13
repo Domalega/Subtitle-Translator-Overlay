@@ -26,6 +26,8 @@
 <div class="settingsContent">
 <section class="card" data-settings-panel="translation">
 <h2 data-i18n="translation">Translation</h2>
+<label><span data-i18n="translation.language">Translation language</span><select id="targetLanguageSelect"></select></label>
+<p class="hint" data-i18n="translation.language.hint">Changing the interface language also sets the translation language. English shows the original text.</p>
 <div class="formGrid">
 <div>
 <button id="selectOcrArea" data-i18n="choose.subtitle.area">Choose subtitle area</button>
@@ -122,6 +124,10 @@
 <h2 data-i18n="appearance">Appearance</h2>
 <div class="formGrid">
 <label>
+<span data-i18n="interface.language">Interface language</span>
+<select id="localeSelect"></select>
+</label>
+<label>
 <span data-i18n="theme">Theme</span>
 <select id="themeSelect">
 <option value="dark" data-i18n="dark">Dark</option>
@@ -168,7 +174,7 @@
 </div>
 </section>
 <section class="card" data-settings-panel="advanced" hidden="">
-<h2>Advanced</h2>
+<h2 data-i18n="advanced">Advanced</h2>
 <div class="formGrid">
 <label class="check">
 <input type="checkbox" id="developerModeToggle">
@@ -205,6 +211,7 @@
 </div>
 </div>
 </main>
+<script src="../../shared/ui/locales/translations.js"></script>
 <script src="../../shared/ui/locales/en.js">
 </script>
 <script src="../../shared/ui/i18n.js">

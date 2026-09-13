@@ -1,0 +1,116 @@
+THIRD-PARTY NOTICES — Subtitle Translator Overlay
+
+The application's own code is licensed under MIT; see LICENSE.
+Third-party components retain their own copyrights and licenses.
+No third-party authorship is claimed by Domalega.
+
+Tesseract.js 7.0.0 — Apache-2.0
+https://github.com/naptha/tesseract.js/tree/v7.0.0
+Tesseract.js-core 7.0.0 — Apache-2.0
+https://github.com/naptha/tesseract.js-core/tree/v7.0.0
+Full license: licenses/Apache-2.0.txt. Original npm package licenses are also
+preserved under resources/app.asar.unpacked/node_modules in the distribution.
+
+Tesseract OCR (WASM)
+The core v7.0.0 build pins Balearica/tesseract at
+2a9c1c49c360462733c386d2a44fcd22c4e21411.
+Upstream attribution from src/api/baseapi.cpp:
+Author: Ray Smith
+(C) Copyright 2006, Google Inc.
+Licensed under the Apache License, Version 2.0; see licenses/Apache-2.0.txt.
+https://github.com/Balearica/tesseract/tree/2a9c1c49c360462733c386d2a44fcd22c4e21411
+
+OCR/WASM libraries
+The following notices are taken from the exact submodule commits pinned by
+Tesseract.js-core v7.0.0. Source URLs and SHA-256 hashes of the copied documents
+are recorded in licenses/sources.json. They cover the upstream build's image
+codecs and math library, even where a particular OCR code path does not use them.
+
+giflib @ fa37672085ce4b3d62c51627ab3c8cf2dda8009a
+  License and copyright notices: licenses/giflib-COPYING.txt
+  Source: https://raw.githubusercontent.com/mirrorer/giflib/fa37672085ce4b3d62c51627ab3c8cf2dda8009a/COPYING
+
+leptonica @ 4af068b56a9674da915debea4ed7e1b9885b17e8
+  License and copyright notices: licenses/leptonica-leptonica-license.txt
+  Source: https://raw.githubusercontent.com/DanBloomberg/leptonica/4af068b56a9674da915debea4ed7e1b9885b17e8/leptonica-license.txt
+
+libjpeg @ 6c0fcb8ddee365e7abc4d332662b06900612e923
+  License and copyright notices: licenses/libjpeg-README.txt
+  Source: https://raw.githubusercontent.com/LuaDist/libjpeg/6c0fcb8ddee365e7abc4d332662b06900612e923/README
+
+libpng @ a37d4836519517bdce6cb9d956092321eca3e73b
+  License and copyright notices: licenses/libpng-LICENSE.txt
+  Source: https://raw.githubusercontent.com/glennrp/libpng/a37d4836519517bdce6cb9d956092321eca3e73b/LICENSE
+
+libtiff @ b51bb157123264e26d34c09cc673d213aea61fc7
+  License and copyright notices: licenses/libtiff-COPYRIGHT.txt
+  Source: https://gitlab.com/libtiff/libtiff/-/raw/b51bb157123264e26d34c09cc673d213aea61fc7/COPYRIGHT
+
+libwebp @ 20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c
+  License and copyright notices: licenses/libwebp-COPYING.txt
+  Source: https://raw.githubusercontent.com/webmproject/libwebp/20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c/COPYING
+
+libwebp @ 20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c
+  License and copyright notices: licenses/libwebp-PATENTS.txt
+  Source: https://raw.githubusercontent.com/webmproject/libwebp/20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c/PATENTS
+
+openlibm @ ae2d91698508701c83cab83714d42a1146dccf85
+  License and copyright notices: licenses/openlibm-LICENSE.txt
+  Source: https://raw.githubusercontent.com/JuliaMath/openlibm/ae2d91698508701c83cab83714d42a1146dccf85/LICENSE.md
+
+zlib @ 21767c654d31d2dccdde4330529775c6c5fd5389
+  License and copyright notices: licenses/zlib-README.txt
+  Source: https://raw.githubusercontent.com/madler/zlib/21767c654d31d2dccdde4330529775c6c5fd5389/README
+
+emscripten (Emscripten 4.0.15)
+  License and copyright notices: licenses/emscripten-LICENSE.txt
+  Source: https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/LICENSE
+
+musl (Emscripten 4.0.15)
+  License and copyright notices: licenses/musl-LICENSE.txt
+  Source: https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/libc/musl/COPYRIGHT
+
+libcxx (Emscripten 4.0.15)
+  License and copyright notices: licenses/libcxx-LICENSE.txt
+  Source: https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/libcxx/LICENSE.TXT
+
+libcxxabi (Emscripten 4.0.15)
+  License and copyright notices: licenses/libcxxabi-LICENSE.txt
+  Source: https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/libcxxabi/LICENSE.TXT
+
+compiler-rt (Emscripten 4.0.15)
+  License and copyright notices: licenses/compiler-rt-LICENSE.txt
+  Source: https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/compiler-rt/LICENSE.TXT
+
+This software is based in part on the work of the Independent JPEG Group.
+The OpenLibm upstream license document also describes its LGPL-licensed tests;
+those test programs are not part of the shipped OCR library.
+The Emscripten toolchain itself is not shipped; notices above cover generated
+runtime code and standard libraries used by the WASM build.
+
+Production JavaScript dependencies
+Including pngjs (MIT), plus Tesseract.js's runtime dependencies: exact versions,
+copyright notices and license texts are in licenses/npm-runtime-NOTICES.txt.
+Existing upstream license files in node_modules remain in the packaged app.
+
+Electron and Chromium
+Electron is MIT-licensed; its Node.js/Chromium components have additional terms.
+The distribution preserves LICENSE.electron.txt and LICENSES.chromium.html beside
+the application executable. The release's licenses.zip also includes them.
+These generated documents belong to the Electron version actually packaged.
+
+English OCR model
+resources/ocr/eng.traineddata is the unmodified official English LSTM model
+from tesseract-ocr/tessdata_fast at revision
+87416418657359cb625c412a48b6e1d6d41c29bd. The repository license is Apache-2.0.
+See resources/ocr/README.md in source, or resources/ocr-model-README.md in the
+application distribution, for size, hash, source URLs and verification details.
+
+Redistribution
+Keep this file, the project's LICENSE, the licenses directory and the upstream
+Electron/Chromium and npm notices with redistributed copies. These notices do
+not replace the original license terms or imply that all bundled code is MIT.
+
+tr46 0.0.3: the old npm package declares MIT but omits the license file.
+licenses/tr46-LICENSE.txt preserves the official upstream copyright/license
+text added later; its revision is recorded in licenses/sources.json.

@@ -1,10 +1,12 @@
 const $ = id => document.getElementById(id);
 const statusElement = $('status');
-$('themeSelect').replaceChildren(...Object.values(window.Themes.registry).map(theme=>{ const option=document.createElement('option'); option.value=theme.id; option.textContent=theme.labelKey ? window.I18n.t(theme.labelKey) : theme.name; return option; }));
+$('themeSelect').replaceChildren(...Object.values(window.Themes.registry).map(theme=>{ const option=document.createElement('option'); option.value=theme.id; if(theme.labelKey) option.dataset.i18n=theme.labelKey; option.textContent=theme.labelKey ? window.I18n.t(theme.labelKey) : theme.name; return option; }));
+$('localeSelect').replaceChildren(...Object.entries(window.I18n.languages).map(([id,label])=>{ const option=document.createElement('option'); option.value=id; option.textContent=label; return option; }));
+$('targetLanguageSelect').replaceChildren(...Object.entries(window.I18n.languages).map(([id,label])=>{ const option=document.createElement('option'); option.value=id; option.textContent=label; return option; }));
 let savedSettings = {}, uiSettingSaveQueue = Promise.resolve();
 const numericKeys = ['fontScale','contextCount','nearSourceFontSize','nearSourceVerticalOffset','nearSourceMaxWidth','nearSourceMaxLines'];
 const checkboxKeys = ['deleteConfirm','developerMode'];
-const controls = { theme:'themeSelect', font:'fontSelect', fontScale:'fontScale', displayMode:'displayMode', nearSourcePlacement:'nearSourcePlacement', nearSourceFontSize:'nearSourceFontSize', nearSourceVerticalOffset:'nearSourceVerticalOffset', nearSourceMaxWidth:'nearSourceMaxWidth', nearSourceMaxLines:'nearSourceMaxLines', nearSourceBackgroundOpacity:'nearSourceBackgroundOpacity', deleteConfirm:'deleteConfirmToggle', developerMode:'developerModeToggle', contextCount:'contextCountSelect' };
+const controls = { targetLanguage:'targetLanguageSelect', locale:'localeSelect', theme:'themeSelect', font:'fontSelect', fontScale:'fontScale', displayMode:'displayMode', nearSourcePlacement:'nearSourcePlacement', nearSourceFontSize:'nearSourceFontSize', nearSourceVerticalOffset:'nearSourceVerticalOffset', nearSourceMaxWidth:'nearSourceMaxWidth', nearSourceMaxLines:'nearSourceMaxLines', nearSourceBackgroundOpacity:'nearSourceBackgroundOpacity', deleteConfirm:'deleteConfirmToggle', developerMode:'developerModeToggle', contextCount:'contextCountSelect' };
 function setStatus(message, error=false) { statusElement.textContent=message; statusElement.hidden=!message; statusElement.classList.toggle('notice',error); }
 function applySettings(settings) {
   savedSettings={...settings};
@@ -26,7 +28,7 @@ function updatePreview() {
 }
 function setUiSettingQueued(key,value) {
   uiSettingSaveQueue=uiSettingSaveQueue.then(async()=>{
-    try { if(!await window.overlayApi.setUiSetting(key,value)) throw new Error(window.I18n.t("setting.was.not.saved")); savedSettings[key]=value; }
+    try { if(!await window.overlayApi.setUiSetting(key,value)) throw new Error(window.I18n.t("setting.was.not.saved")); savedSettings[key]=value; if(key==='locale') applySettings({...savedSettings,targetLanguage:value}); }
     catch(error) { applySettings(await window.overlayApi.getUiSettings().catch(()=>savedSettings)); setStatus(window.I18n.t("could.not.save.settings")+error.message,true); return false; }
     return true;
   }); return uiSettingSaveQueue;

@@ -1,6 +1,6 @@
 {
   "name": "subtitle-translation-overlay",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "license": "MIT",
   "productName": "Subtitle Translator Overlay",
@@ -14,13 +14,14 @@
     "test:ui": "node test/integration/ui-windows-smoke.js",
     "check:js": "node scripts/check-js.js",
     "check:detection-samples": "node scripts/check-detection-samples.js",
-    "verify": "npm run check:files && npm run check:ui && npm run test:coverage && npm run test:ui && npm run test:ocr && npm run check:js && git diff --check",
+    "verify": "npm run check:files && npm run check:licenses && npm run check:ui && npm run test:coverage && npm run test:ui && npm run test:ocr && npm run check:js && git diff --check",
     "prebuild": "npm run verify",
     "build": "electron-builder --win portable",
     "dist": "electron-builder --win",
     "test:coverage": "node scripts/run-tests.js --coverage",
     "test:ocr": "node test/integration/ocr-smoke.js",
-    "predist": "npm run verify"
+    "predist": "npm run verify",
+    "check:licenses": "node scripts/check-licenses.js"
   },
   "author": "Domalega",
   "build": {
@@ -43,12 +44,29 @@
       "target": [
         "portable"
       ],
-      "artifactName": "Subtitle-Translator-Overlay-${version}.${ext}"
+      "artifactName": "Subtitle-Translator-Overlay-${version}.${ext}",
+      "icon": "src/assets/app.ico"
     },
     "extraResources": [
       {
         "from": "resources/ocr/eng.traineddata",
         "to": "eng.traineddata"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      },
+      {
+        "from": "licenses",
+        "to": "licenses"
+      },
+      {
+        "from": "resources/ocr/README.md",
+        "to": "ocr-model-README.md"
       }
     ]
   },

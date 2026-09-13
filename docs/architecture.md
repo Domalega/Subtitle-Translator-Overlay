@@ -198,3 +198,7 @@ The [OCR 0.2.2 report](ocr-quality-0.2.2.md) describes sample replay and preproc
 ## UI architecture
 
 See [UI design and extension points](ui-design.md) for the two-action workflow, semantic themes, English localization catalog, reset transactions, and verification boundaries. The main window keeps the full result available for every display setting. Diagnostics now live in Advanced settings. UI smoke tests use offscreen rendering with an isolated profile and save previews in `.agent/tmp/ui-preview/`.
+
+### Translation language
+
+`targetLanguage` is saved with UI settings (default `ru`). A locale change atomically saves both `locale` and `targetLanguage`; target changes alone preserve the locale. Main-process translation routes read the saved target, map `zh` to `zh-CN`, and reject results started before a target change. Renderer caches include the target; the OCR coordinator restarts on changes to retire pending results. OCR remains English-only; English as target returns the source. Dictionary entries preserve `targetLanguage` (legacy entries are Russian); the legacy `russian` property stores translated text for backward compatibility.

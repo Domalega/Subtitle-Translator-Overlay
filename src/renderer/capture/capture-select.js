@@ -47,3 +47,5 @@ window.addEventListener('mouseup', (event) => {
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') window.overlayApi.cancelCaptureTranslate();
 });
+
+window.overlayApi.getUiSettings().then(settings => window.applyInterfaceLocale(settings.locale)).catch(() => {});

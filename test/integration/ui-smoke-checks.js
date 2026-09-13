@@ -3,7 +3,7 @@ const fs=require('node:fs');const path=require('node:path');
 async function runUiSmokeTest({app,mainWindow,createToolWindow,createSelectionWindow,createCaptureWindow,createNearSourceWindow,getSelectionWindow,getCaptureWindow}) {
   const failures=[];
   const screenshotRoot=path.resolve(__dirname,'../../.agent/tmp/ui-preview');fs.mkdirSync(screenshotRoot,{recursive:true});
-  const loaded=win=>new Promise((resolve,reject)=>{ if(!win.webContents.isLoading())return resolve();win.webContents.once('did-finish-load',resolve);win.webContents.once('did-fail-load',(_e,_code,message)=>reject(Error(message))); });
+  const loaded=win=>new Promise((resolve,reject)=>{ if(!win.webContents.isLoading())return resolve();win.webContents.once('did-stop-loading',resolve);win.webContents.once('did-fail-load',(_e,_code,message)=>reject(Error(message))); });
   const evaluate=async(win,code)=>{let timer;try{return await Promise.race([(async()=>{await loaded(win);if(!win.webContents.debugger.isAttached())win.webContents.debugger.attach('1.3');const reply=await win.webContents.debugger.sendCommand('Runtime.evaluate',{expression:code,awaitPromise:true,returnByValue:true});if(reply.exceptionDetails)throw Error(JSON.stringify(reply.exceptionDetails));return reply.result.value})(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('UI evaluation timed out: '+code.slice(0,120))),7000)})]);}finally{clearTimeout(timer)}};
   const watch=(win,name)=>{win.webContents.on('console-message',({level,message})=>{if(level==='error')failures.push(name+': '+message)});};
   const settle=()=>new Promise(resolve=>setTimeout(resolve,100));
@@ -56,7 +56,22 @@ async function runUiSmokeTest({app,mainWindow,createToolWindow,createSelectionWi
     for(const win of [getSelectionWindow(),getCaptureWindow(),createNearSourceWindow()]){
       watch(win,'auxiliary');check(await evaluate(win,"typeof require==='undefined' && Boolean(window.overlayApi)"),'Auxiliary isolation failed');
     }
+    await evaluate(mainWindow,"outputRouter.clear()");
+    // Real Electron windows receive locale broadcasts and render every shipped script.
+    for (const locale of ['ru','zh','hi','es','en']) {
+      await evaluate(settings, "document.querySelector('[data-settings-section=appearance]').click(); var picker=document.getElementById('localeSelect'); picker.value="+JSON.stringify(locale)+"; picker.dispatchEvent(new Event('change'))"); await settle();
+      for (const win of [mainWindow,settings,dictionary]) check(await evaluate(win,"document.documentElement.lang==="+JSON.stringify(locale)), 'Locale broadcast failed: '+locale);
+      check(await evaluate(settings,"document.documentElement.scrollWidth<=innerWidth && document.getElementById('localeSelect').value==="+JSON.stringify(locale)), 'Language picker layout failed: '+locale);
+      check(await evaluate(settings,"document.getElementById('targetLanguageSelect').value==="+JSON.stringify(locale)), 'Translation language did not follow locale: '+locale);
+      check(await evaluate(mainWindow,"targetLanguage==="+JSON.stringify(locale)), 'Main translation target differs: '+locale);
+      await screenshot(settings,'settings-language-'+locale);
+    }
+    await evaluate(settings,"window.overlayApi.setUiSetting('locale','ru')"); await settle();
+    await evaluate(settings,"document.querySelector('[data-settings-section=translation]').click(); document.getElementById('targetLanguageSelect').value='hi'; document.getElementById('targetLanguageSelect').dispatchEvent(new Event('change'))"); await settle();
+    await screenshot(settings,'translation-language-picker');
     settings.close();await settle();const reopened=createToolWindow('renderer/settings/settings.html','Settings',600,760);await loaded(reopened);await settle();
+    check(await evaluate(reopened,"document.getElementById('targetLanguageSelect').value==='hi'"),'Independent translation target did not persist');
+    check(await evaluate(reopened,"document.documentElement.lang==='ru' && document.getElementById('localeSelect').value==='ru'"),'Language did not persist after reopen');
     check(await evaluate(reopened,"document.getElementById('themeSelect').value==='dark' && document.getElementById('displayMode').value==='both'"),'Settings did not persist after reopen');
   }catch(error){failures.push(error.stack||error.message);}
   if(failures.length){console.error('UI smoke test failed:\n'+failures.join('\n'));app.exit(1);}else{console.log('UI smoke test passed. Previews: '+screenshotRoot);app.exit(0);}

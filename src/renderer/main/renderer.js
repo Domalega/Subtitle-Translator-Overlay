@@ -18,6 +18,7 @@ const { NearSourceOutput } = window.NearSourceOutputModule;
 const { OutputRouter } = window.OutputRouterModule;
 const { ScreenOcrCoordinator } = window.ScreenOcrCoordinatorModule;
 
+let targetLanguage = 'ru', targetLanguageRevision = 0;
 let cues = [];
 let currentIndex = -1;
 let startedAt = 0;
@@ -71,11 +72,13 @@ function findCueIndex(time) {
 }
 
 async function translate(text, options = {}) {
-  const cacheKey = cachePrefix + text;
+  const revision = targetLanguageRevision;
+  const cacheKey = cachePrefix + targetLanguage + ':' + text;
   const cached = options.scope ? null : storage.getItem(cacheKey);
   if (cached) return cached;
 
   const translated = await window.overlayApi.translate(text, options.scope);
+  if (revision !== targetLanguageRevision) throw new Error('Translation language changed');
   if (!options.scope) storage.setItem(cacheKey, translated);
   return translated;
 }
@@ -101,19 +104,21 @@ async function addSelectedWord() {
   actionStatus.hidden = false; actionStatus.textContent = window.I18n.t("adding.word");
 
   try {
-    const selectedIsRussian = isRussianText(selectedText);
+    const wordLanguage = targetLanguage;
+    const selectedIsRussian = russianTextElement.contains(window.getSelection()?.anchorNode) || (wordLanguage==='ru' && isRussianText(selectedText));
     const english = selectedIsRussian
-      ? cleanSelectedWord(await window.overlayApi.translateText(selectedText, 'ru', 'en'))
+      ? cleanSelectedWord(await window.overlayApi.translateText(selectedText, wordLanguage==='zh'?'zh-CN':wordLanguage, 'en'))
       : selectedText;
     const russian = selectedIsRussian
       ? selectedText
-      : cleanSelectedWord(await window.overlayApi.translateText(selectedText, 'en', 'ru'));
+      : cleanSelectedWord(await window.overlayApi.translateText(selectedText, 'en', wordLanguage==='zh'?'zh-CN':wordLanguage));
     const transcription = await window.overlayApi.getPhonetic(english);
     const result = await window.overlayApi.dictionaryAdd({
       sourceText: selectedText,
       english,
       russian,
-      transcription
+      transcription,
+      targetLanguage: wordLanguage
     });
 
     if (result.duplicate) {
@@ -130,7 +135,7 @@ async function addSelectedWord() {
 async function showCue(index) {
   currentIndex = index;
 
-  const requestIndex = index;
+  const requestIndex = index, languageRevision = targetLanguageRevision;
   if (index === -1) {
     englishTextElement.textContent = '';
     russianTextElement.textContent = '';
@@ -143,9 +148,9 @@ async function showCue(index) {
 
   try {
     const translated = await translate(cue.text);
-    if (currentIndex === requestIndex) russianTextElement.textContent = translated;
+    if (currentIndex === requestIndex && languageRevision === targetLanguageRevision) russianTextElement.textContent = translated;
   } catch (error) {
-    if (currentIndex !== requestIndex) return;
+    if (currentIndex !== requestIndex || languageRevision !== targetLanguageRevision) return;
     russianTextElement.textContent = window.I18n.t("translation.unavailable");
     statusElement.textContent = error.message;
   }
@@ -174,7 +179,7 @@ function setRunning(nextRunning) {
 
 function getCachedTranslation(normalizedKey) {
   if (ocrTranslationCache.has(normalizedKey)) return ocrTranslationCache.get(normalizedKey);
-  const localKey = 'ocr-norm-' + normalizedKey;
+  const localKey = 'ocr-norm-' + targetLanguage + ':' + normalizedKey;
   const cached = storage.getItem(localKey);
   if (cached) {
     setCachedTranslation(normalizedKey, cached);
@@ -192,11 +197,11 @@ function setCachedTranslation(normalizedKey, translation) {
     if (ocrCacheInsertOrder.length > OCR_CACHE_MAX) {
       const oldest = ocrCacheInsertOrder.shift();
       ocrTranslationCache.delete(oldest);
-      try { storage.removeItem('ocr-norm-' + oldest); } catch (_) {}
+      try { storage.removeItem('ocr-norm-' + targetLanguage + ':' + oldest); } catch (_) {}
     }
   }
   ocrTranslationCache.set(normalizedKey, translation);
-  try { storage.setItem('ocr-norm-' + normalizedKey, translation); } catch (_) {}
+  try { storage.setItem('ocr-norm-' + targetLanguage + ':' + normalizedKey, translation); } catch (_) {}
 }
 
 function stopOcr(message = window.I18n.t("screen.ocr.stopped")) {
@@ -265,7 +270,8 @@ dictionaryOpenButton.addEventListener('click', () => window.overlayApi.openDicti
 settingsToggleButton.addEventListener('click', () => window.overlayApi.openSettingsWindow());
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
-  if (key === 'font') window.Appearance.apply({font:value});
+  if (key === 'font' || key === 'locale') window.Appearance.apply({[key]:value});
+  if (key === 'targetLanguage') applyTargetLanguage(value);
   if (key === 'displayMode') { outputRouter.setDisplayMode(value); document.getElementById('overlayNotice').hidden = value !== 'overlay'; }
   if (key === 'developerMode') setDeveloperMode(value === true);
   if (key.startsWith('nearSource')) nearSourceOutput.setSettings({ [key]: value });
@@ -286,6 +292,7 @@ window.overlayApi.onApplyUiSetting(({ key, value }) => {
 
 window.overlayApi.onApplyUiSettings((settings) => {
   window.Appearance.apply(settings);
+  applyTargetLanguage(settings.targetLanguage);
   document.getElementById('overlayNotice').hidden=settings.displayMode!=='overlay';
   outputRouter.setDisplayMode(settings.displayMode);
   setDeveloperMode(settings.developerMode === true);
@@ -319,6 +326,7 @@ applyFont('system');
 async function loadInitSettings() {
   try {
     const s = await window.uiReady;
+    applyTargetLanguage(s.targetLanguage);
     window.Themes.apply(document, s.theme); panel.dataset.theme = window.Themes.normalizeId(s.theme);
     document.getElementById('overlayNotice').hidden = s.displayMode !== 'overlay';
     storage.setItem('subtitle-overlay-theme', panel.dataset.theme);
@@ -447,3 +455,30 @@ window.overlayApi.onOcrAreaChanged((area) => {
 });
 
 document.addEventListener('keydown',event=>{if(event.key==='Escape' && editing){event.preventDefault();document.getElementById('cancelEdit').click();}});
+
+document.addEventListener('locale-changed', () => { updateControls(); document.getElementById('areaStatus').textContent=window.I18n.t(hasOcrArea?'subtitle.area.selected':'no.subtitle.area.selected'); });
+
+function updateTranslationHeading() {
+  document.getElementById('translationHeading').textContent=window.I18n.t('translation')+' · '+window.I18n.languages[targetLanguage];
+}
+function applyTargetLanguage(value) {
+  if (!Object.hasOwn(window.I18n.languages,value) || value===targetLanguage) { updateTranslationHeading(); return; }
+  targetLanguage=value; targetLanguageRevision++;
+  const revision=targetLanguageRevision, original=englishTextElement.textContent;
+  const wasRunning=isOcrRunning;
+  screenOcrCoordinator.stop();
+  ocrTranslationCache.clear(); ocrCacheInsertOrder=[];
+  manualTranslationRequestId++; retranslateButton.disabled=false;
+  if(snapshot) snapshot.russian='';
+  if(editSnapshot) editSnapshot.russian='';
+  outputRouter.clear(); englishTextElement.textContent=original;
+  updateTranslationHeading(); updateControls();
+  if(wasRunning) screenOcrCoordinator.start();
+  else if(original.trim() && !editing && !capturePending) {
+    translate(original,{scope:'language-change'}).then(result=>{
+      if(revision===targetLanguageRevision && englishTextElement.textContent===original && !editing && !capturePending) { outputRouter.showTranslation(result,original); updateControls(); }
+    }).catch(()=>{if(revision===targetLanguageRevision) notify(window.I18n.t('translation.failed'));});
+  }
+}
+document.addEventListener('locale-changed',updateTranslationHeading);
+updateTranslationHeading();

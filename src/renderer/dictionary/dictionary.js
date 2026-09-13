@@ -52,7 +52,7 @@ function getPageSize() {
 document.body.dataset.theme = 'dark';
 
 window.overlayApi.onApplyUiSetting(({ key, value }) => {
-  if (key === 'font') window.Appearance.apply({font:value});
+  if (key === 'font' || key === 'locale') window.Appearance.apply({[key]:value});
   if (key === 'theme') {
     window.Themes.apply(document,value); document.body.dataset.theme = window.Themes.normalizeId(value);
     localStorage.setItem('subtitle-overlay-theme', value);
@@ -183,7 +183,7 @@ async function renderDictionary() {
       window.Dialogs.show(contextModal);
 
       let result;
-      try { result = await window.overlayApi.getContextSentences(word); } catch (error) {
+      try { result = await window.overlayApi.getContextSentences(word, entry.targetLanguage || 'ru'); } catch (error) {
         if (requestId === contextRequestId) contextContent.textContent = `Could not load context: ${error.message}`;
         return;
       }
@@ -380,3 +380,5 @@ loadUiSettings().then(() => {
   renderDictionary();
   renderDictionaryAfterLayout();
 });
+
+document.addEventListener('locale-changed', () => { renderDictionary(); });

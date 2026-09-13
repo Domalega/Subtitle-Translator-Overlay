@@ -130,6 +130,26 @@ html,body{
   }
 }
 
+.titlebar .iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 7px;
+  list-style: none;
+}
+.titlebar .iconButton::-webkit-details-marker { display: none; }
+.iconButton svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .footer:not(:has(> :not([hidden]))) {
   display: none;
 }

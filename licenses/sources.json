@@ -1,0 +1,104 @@
+[
+  {
+    "component": "Tesseract.js 7.0.0; Tesseract.js-core 7.0.0; Tesseract OCR; English trained data",
+    "source": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/LICENSE",
+    "file": "Apache-2.0.txt",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "component": "giflib @ fa37672085ce4b3d62c51627ab3c8cf2dda8009a",
+    "source": "https://raw.githubusercontent.com/mirrorer/giflib/fa37672085ce4b3d62c51627ab3c8cf2dda8009a/COPYING",
+    "file": "giflib-COPYING.txt",
+    "sha256": "0c9b7990ecdca88b676db232c226548ac408b279f550d424d996f0d83591dd8e"
+  },
+  {
+    "component": "leptonica @ 4af068b56a9674da915debea4ed7e1b9885b17e8",
+    "source": "https://raw.githubusercontent.com/DanBloomberg/leptonica/4af068b56a9674da915debea4ed7e1b9885b17e8/leptonica-license.txt",
+    "file": "leptonica-leptonica-license.txt",
+    "sha256": "87829abb5bbb00b55a107365da89e9a33f86c4250169e5a1e5588505be7d5806"
+  },
+  {
+    "component": "libjpeg @ 6c0fcb8ddee365e7abc4d332662b06900612e923",
+    "source": "https://raw.githubusercontent.com/LuaDist/libjpeg/6c0fcb8ddee365e7abc4d332662b06900612e923/README",
+    "file": "libjpeg-README.txt",
+    "sha256": "c791da525733040e622ed257c7b096b8f5191b332604ead0c6bc2b54cbd8e0d1"
+  },
+  {
+    "component": "libpng @ a37d4836519517bdce6cb9d956092321eca3e73b",
+    "source": "https://raw.githubusercontent.com/glennrp/libpng/a37d4836519517bdce6cb9d956092321eca3e73b/LICENSE",
+    "file": "libpng-LICENSE.txt",
+    "sha256": "33ba4e187d8b0c8d7ab2bc2e522bb095219e03089e9aa0122b4fb9eb2b7de82b"
+  },
+  {
+    "component": "libtiff @ b51bb157123264e26d34c09cc673d213aea61fc7",
+    "source": "https://gitlab.com/libtiff/libtiff/-/raw/b51bb157123264e26d34c09cc673d213aea61fc7/COPYRIGHT",
+    "file": "libtiff-COPYRIGHT.txt",
+    "sha256": "fbd6fed7938541d2c809c0826225fc85e551fdbfa8732b10f0c87e0847acafd7"
+  },
+  {
+    "component": "libwebp @ 20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c",
+    "source": "https://raw.githubusercontent.com/webmproject/libwebp/20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c/COPYING",
+    "file": "libwebp-COPYING.txt",
+    "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"
+  },
+  {
+    "component": "libwebp @ 20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c",
+    "source": "https://raw.githubusercontent.com/webmproject/libwebp/20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c/PATENTS",
+    "file": "libwebp-PATENTS.txt",
+    "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c"
+  },
+  {
+    "component": "openlibm @ ae2d91698508701c83cab83714d42a1146dccf85",
+    "source": "https://raw.githubusercontent.com/JuliaMath/openlibm/ae2d91698508701c83cab83714d42a1146dccf85/LICENSE.md",
+    "file": "openlibm-LICENSE.txt",
+    "sha256": "b1843fbf5b03f519a5f0a44fce751bdd1022ae7148614923f9d6293e17a18b17"
+  },
+  {
+    "component": "zlib @ 21767c654d31d2dccdde4330529775c6c5fd5389",
+    "source": "https://raw.githubusercontent.com/madler/zlib/21767c654d31d2dccdde4330529775c6c5fd5389/README",
+    "file": "zlib-README.txt",
+    "sha256": "fc2c3368901700f0acdeb1d8afeaca5923296768ec6824ecdf627aac396001fd"
+  },
+  {
+    "component": "emscripten (Emscripten 4.0.15)",
+    "source": "https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/LICENSE",
+    "file": "emscripten-LICENSE.txt",
+    "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86"
+  },
+  {
+    "component": "musl (Emscripten 4.0.15)",
+    "source": "https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/libc/musl/COPYRIGHT",
+    "file": "musl-LICENSE.txt",
+    "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af"
+  },
+  {
+    "component": "libcxx (Emscripten 4.0.15)",
+    "source": "https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/libcxx/LICENSE.TXT",
+    "file": "libcxx-LICENSE.txt",
+    "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b"
+  },
+  {
+    "component": "libcxxabi (Emscripten 4.0.15)",
+    "source": "https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/libcxxabi/LICENSE.TXT",
+    "file": "libcxxabi-LICENSE.txt",
+    "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c"
+  },
+  {
+    "component": "compiler-rt (Emscripten 4.0.15)",
+    "source": "https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.15/system/lib/compiler-rt/LICENSE.TXT",
+    "file": "compiler-rt-LICENSE.txt",
+    "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+  },
+  {
+    "component": "Production npm dependencies",
+    "source": "Installed packages from package-lock.json; individual paths in this document",
+    "file": "npm-runtime-NOTICES.txt",
+    "sha256": "6ec784b136202627d8faa1b87a3ab48aefcb94e6e54bc7b3fbf49cc172f7a42f"
+  },
+  {
+    "component": "tr46 0.0.3 (MIT in published metadata); copyright/license text from subsequent upstream license addition",
+    "source": "https://raw.githubusercontent.com/jsdom/tr46/feff5a1db5fbae23242c15efa4e64f71c9750af0/LICENSE.md",
+    "file": "tr46-LICENSE.txt",
+    "sha256": "499d6d466d064e0460427967a344e2a32fcb86ea8c6cd1a285ec4f1fa03fba67"
+  }
+]

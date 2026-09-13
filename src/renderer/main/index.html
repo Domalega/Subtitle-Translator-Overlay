@@ -14,14 +14,14 @@
 <strong data-i18n="subtitle.translator">Subtitle Translator</strong>
 <div class="row">
 <details class="menu" id="moreMenu">
-<summary aria-label="More actions" data-i18n-aria-label="more.actions" data-i18n="more">More</summary>
+<summary class="iconButton" aria-label="More actions" title="More actions" data-i18n-aria-label="more.actions" data-i18n-title="more.actions"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg></summary>
 <div>
 <button id="dictionaryOpen" data-i18n="dictionary">Dictionary</button>
 <button id="ocrOnce" data-i18n="read.subtitle.area.once">Read subtitle area once</button>
 <button id="restoreSize" data-i18n="restore.window.size">Restore window size</button>
 </div>
 </details>
-<button id="settingsToggle" data-i18n="settings">Settings</button>
+<button id="settingsToggle" class="iconButton" aria-label="Settings" title="Settings" data-i18n-aria-label="settings" data-i18n-title="settings"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.50 12.00L19.44 12.98L21.66 14.59L21.24 15.83L18.50 15.75L17.95 16.57L17.30 17.30L16.57 17.95L17.00 20.66L15.83 21.24L13.94 19.24L12.98 19.44L12.00 19.50L11.02 19.44L9.41 21.66L8.17 21.24L8.25 18.50L7.43 17.95L6.70 17.30L6.05 16.57L3.34 17.00L2.76 15.83L4.76 13.94L4.56 12.98L4.50 12.00L4.56 11.02L2.34 9.41L2.76 8.17L5.50 8.25L6.05 7.43L6.70 6.70L7.43 6.05L7.00 3.34L8.17 2.76L10.06 4.76L11.02 4.56L12.00 4.50L12.98 4.56L14.59 2.34L15.83 2.76L15.75 5.50L16.57 6.05L17.30 6.70L17.95 7.43L20.66 7.00L21.24 8.17L19.24 10.06L19.44 11.02Z"/><circle cx="12" cy="12" r="3"/></svg></button>
 <button id="minimizeWindow" aria-label="Minimize window" title="Minimize window" data-i18n-title="minimize.window" data-i18n-aria-label="minimize.window">−</button>
 <button id="closeWindow" aria-label="Quit application" title="Quit application" data-i18n-title="quit.application" data-i18n-aria-label="quit.application">×</button>
 </div>
@@ -41,7 +41,7 @@
 </div>
 <p id="overlayNotice" class="overlayNotice" hidden="" data-i18n="translation.is.shown.over.your.video.the.full.result.is.also.avai">Translation is shown over your video. The full result is also available below.</p>
 <div class="subtitleBox">
-<div class="label" data-i18n="translation.russian">TRANSLATION · RUSSIAN</div>
+<div class="label" id="translationHeading">Translation · Русский</div>
 <p id="emptyResult" class="hint" data-i18n="your.translation.will.appear.here">Your translation will appear here.</p>
 <div id="russianText" class="subtitleText">
 </div>
@@ -67,7 +67,8 @@
 </footer>
 </section>
 </main>
-    <script src="../../shared/ui/locales/en.js">
+    <script src="../../shared/ui/locales/translations.js"></script>
+<script src="../../shared/ui/locales/en.js">
 </script>
 <script src="../../shared/ui/i18n.js">
 </script>

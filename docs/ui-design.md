@@ -1,6 +1,6 @@
 # UI design and extension points
 
-The interface is English-only and ships exactly two themes: Dark and Light. This document describes the redesigned source, not a claim of live video/game acceptance.
+The interface supports English (default), Russian, Simplified Chinese, Hindi and Spanish, and ships exactly two themes: Dark and Light. This document describes the redesigned source, not a claim of live video/game acceptance.
 
 ## Interaction model
 
@@ -18,7 +18,7 @@ The main window offers continuous subtitle translation and a one-shot area captu
 | Select a word | Pause running subtitles before the next update can replace the selection. |
 | Stop hotkey | Stop subtitles and clear any pending automatic-resume intention. |
 
-A controller output is always retained in the main window. Over-video output is a separate click-through presentation with independent line and size limits. The capture shortcut is shown only in Translation settings. The bottom translation status appears only with developer mode enabled; the footer collapses when it has no visible content. dictionary/edit errors use a separate feedback area so OCR progress cannot erase them.
+A controller output is always retained in the main window. Over-video output is a separate click-through presentation with independent line and size limits. The capture shortcut is shown only in Translation settings. The bottom translation status appears only with developer mode enabled; the footer collapses when it has no visible content. Dictionary/edit errors use a separate feedback area so OCR progress cannot erase them.
 
 ## Shared appearance
 
@@ -33,15 +33,18 @@ To add a future built-in theme, add its definition to the registry and optionall
 
 A future custom-theme editor can persist validated definitions in a separate store and register them before settings normalization. File import, editing and custom-theme persistence are intentionally not implemented. Existing Nothing light identifiers migrate to Light; all other removed/unknown identifiers fall back to Dark. Migration does not keep the old theme styles or options.
 
-## Future interface languages
+## Interface and translation languages
 
-- [English catalog](../src/shared/ui/locales/en.js): English labels and messages.
+- [English catalog](../src/shared/ui/locales/en.js): default labels and fallback messages.
+- [Translation catalogs](../src/shared/ui/locales/translations.js): Russian, Simplified Chinese, Hindi and Spanish interface messages.
 - [Localization runtime](../src/shared/ui/i18n.js): locale registration, named interpolation, fallback and static DOM application.
-- [Static binding](../src/renderer/shared/localize.js): the shipped interface selects English.
+- [Static binding](../src/renderer/shared/localize.js): applies the selected locale and dispatches locale changes to open windows.
 
-Static UI text uses `data-i18n`; accessible names, hints and titles use the corresponding attribute bindings. Dynamic text uses `I18n.t(key, parameters)`. Translation results and dictionary contents are user data and must never be translated by the interface localization layer. Detailed OCR diagnostics and raw service errors are technical runtime data; a future language should localize their user-facing summaries, not mutate the underlying measurements or remote text.
+Static UI text uses `data-i18n`; accessible names, hints and titles use the corresponding attribute bindings. Dynamic text uses `I18n.t(key, parameters)`. Translation results and dictionary contents are user data and must never be translated by the interface localization layer. Detailed OCR diagnostics and raw service errors are technical runtime data; interface catalogs should localize their user-facing summaries, not mutate the underlying measurements or remote text.
 
-To add a language, supply a separate catalog, load it before window initialization, call `registerLocale`, and select it through a validated setting. Missing keys fall back to English. `registerLocale` accepts known message keys and string values only; DOM insertion uses text content. A language picker, plural rules and right-to-left layouts remain future features with their own tests. UI language is independent of the English-to-Russian translation direction.
+Settings → Appearance provides the interface language picker. The saved selection updates open windows without restarting. Changing the interface language also sets the translation target to that language; Settings → Translation then allows an independent target selection. OCR remains English-only. Selecting English as the target displays the original text without a translation request. Target changes invalidate cached and pending translations; saved dictionary entries retain their translation language.
+
+To add a language, extend the catalogs, language registry and settings validation together. Missing keys fall back to English. `registerLocale` accepts known message keys and string values only; DOM insertion uses text content. Plural rules and right-to-left layouts remain future features requiring their own tests.
 
 ## Settings and dictionary
 

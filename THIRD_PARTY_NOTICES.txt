@@ -96,7 +96,7 @@ Existing upstream license files in node_modules remain in the packaged app.
 Electron and Chromium
 Electron is MIT-licensed; its Node.js/Chromium components have additional terms.
 The distribution preserves LICENSE.electron.txt and LICENSES.chromium.html beside
-the application executable. The release's licenses.zip also includes them.
+the application executable. The CI artifact also includes them in licenses.zip.
 These generated documents belong to the Electron version actually packaged.
 
 English OCR model
